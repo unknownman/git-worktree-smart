@@ -1,6 +1,6 @@
-use crate::models::Worktree;
+use crate::models::WorktreeInfo;
 use crate::Context;
 
-pub fn print(_worktrees: &[Worktree], _ctx: &Context) {
+pub fn print(_worktrees: &[WorktreeInfo], _ctx: &Context) {
     todo!()
 }

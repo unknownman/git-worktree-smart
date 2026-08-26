@@ -1,19 +1,27 @@
 use std::fmt;
 use std::path::PathBuf;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize)]
-pub struct Worktree {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorktreeInfo {
     pub path: PathBuf,
+    pub name: String,
     pub branch: Option<String>,
-    pub head: String,
+    pub head_hash: String,
+    pub head_msg: String,
     pub status: WorktreeStatus,
 }
 
-#[derive(Debug, Clone, Serialize)]
+impl WorktreeInfo {
+    pub fn display_branch(&self) -> &str {
+        self.branch.as_deref().unwrap_or("detached HEAD")
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorktreeStatus {
-    pub dirty: bool,
+    pub is_dirty: bool,
     pub ahead: u32,
     pub behind: u32,
 }
@@ -21,20 +29,20 @@ pub struct WorktreeStatus {
 impl WorktreeStatus {
     pub fn clean() -> Self {
         Self {
-            dirty: false,
+            is_dirty: false,
             ahead: 0,
             behind: 0,
         }
     }
 
     pub fn is_clean(&self) -> bool {
-        !self.dirty && self.ahead == 0 && self.behind == 0
+        !self.is_dirty && self.ahead == 0 && self.behind == 0
     }
 }
 
 impl fmt::Display for WorktreeStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match (self.dirty, self.ahead, self.behind) {
+        match (self.is_dirty, self.ahead, self.behind) {
             (false, 0, 0) => write!(f, "clean"),
             (true, 0, 0) => write!(f, "dirty"),
             (false, a, 0) => write!(f, "ahead {a}"),
@@ -47,9 +55,14 @@ impl fmt::Display for WorktreeStatus {
     }
 }
 
-impl fmt::Display for Worktree {
+impl fmt::Display for WorktreeInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let branch = self.branch.as_deref().unwrap_or("detached HEAD");
-        write!(f, "{} ({}) [{}]", self.path.display(), branch, self.status)
+        write!(
+            f,
+            "{} ({}) [{}]",
+            self.path.display(),
+            self.display_branch(),
+            self.status
+        )
     }
 }
