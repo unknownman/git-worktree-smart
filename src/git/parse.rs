@@ -134,6 +134,37 @@ fn get_ahead_behind(cwd: &Path, verbose: bool) -> Result<(u32, u32), AppError> {
     Ok(parse_rev_list_count(&output))
 }
 
+pub fn sanitize_branch_name(branch: &str) -> String {
+    branch
+        .chars()
+        .map(|c| if is_safe_path_char(c) { c } else { '-' })
+        .collect()
+}
+
+fn is_safe_path_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '.' || c == '_' || c == '-'
+}
+
+pub fn infer_worktree_path(repo_root: &Path, branch_name: &str) -> Result<PathBuf, AppError> {
+    let repo_name = repo_root
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| AppError::PathInferenceFailed {
+            reason: format!("cannot extract repo name from {}", repo_root.display()),
+        })?;
+
+    let sanitized = sanitize_branch_name(branch_name);
+    let dir_name = format!("{repo_name}-{sanitized}");
+
+    let parent = repo_root
+        .parent()
+        .ok_or_else(|| AppError::PathInferenceFailed {
+            reason: format!("cannot determine parent of {}", repo_root.display()),
+        })?;
+
+    Ok(parent.join(dir_name))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -451,5 +482,56 @@ locked";
     fn test_derive_name_root_path() {
         let name = derive_name(Path::new("/"), None);
         assert_eq!(name, "unknown");
+    }
+
+    #[test]
+    fn test_sanitize_simple_name() {
+        assert_eq!(sanitize_branch_name("feature"), "feature");
+    }
+
+    #[test]
+    fn test_sanitize_slash_to_hyphen() {
+        assert_eq!(sanitize_branch_name("feature/auth"), "feature-auth");
+    }
+
+    #[test]
+    fn test_sanitize_deep_nested() {
+        assert_eq!(
+            sanitize_branch_name("feature/user/auth-v2"),
+            "feature-user-auth-v2"
+        );
+    }
+
+    #[test]
+    fn test_sanitize_special_chars() {
+        assert_eq!(sanitize_branch_name("fix@bug!"), "fix-bug-");
+    }
+
+    #[test]
+    fn test_sanitize_dots_underscores_hyphens_preserved() {
+        assert_eq!(sanitize_branch_name("v2.0_hotfix-1"), "v2.0_hotfix-1");
+    }
+
+    #[test]
+    fn test_sanitize_empty() {
+        assert_eq!(sanitize_branch_name(""), "");
+    }
+
+    #[test]
+    fn test_infer_worktree_path() {
+        let path = infer_worktree_path(Path::new("/src/api"), "feature/login");
+        assert_eq!(path.unwrap(), PathBuf::from("/src/api-feature-login"));
+    }
+
+    #[test]
+    fn test_infer_worktree_path_simple_branch() {
+        let path = infer_worktree_path(Path::new("/Users/dev/my-repo"), "hotfix");
+        assert_eq!(path.unwrap(), PathBuf::from("/Users/dev/my-repo-hotfix"));
+    }
+
+    #[test]
+    fn test_infer_worktree_path_special_chars() {
+        let path = infer_worktree_path(Path::new("/projects/web"), "fix/urgent-bug");
+        assert_eq!(path.unwrap(), PathBuf::from("/projects/web-fix-urgent-bug"));
     }
 }

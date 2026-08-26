@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::error::AppError;
@@ -47,4 +47,23 @@ pub fn run_git_status(
         stdout: String::from_utf8_lossy(&output.stdout).trim().to_owned(),
         stderr: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
     })
+}
+
+pub fn get_repo_root(verbose: bool) -> Result<PathBuf, AppError> {
+    let output = run_git(&["rev-parse", "--show-toplevel"], None, verbose)?;
+    Ok(PathBuf::from(output))
+}
+
+pub fn check_branch_exists(branch_name: &str, verbose: bool) -> Result<bool, AppError> {
+    let status = run_git_status(
+        &[
+            "show-ref",
+            "--verify",
+            "--quiet",
+            &format!("refs/heads/{branch_name}"),
+        ],
+        None,
+        verbose,
+    )?;
+    Ok(status.success)
 }
