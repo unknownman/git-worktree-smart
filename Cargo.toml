@@ -1,0 +1,20 @@
+[package]
+name = "git-worktree-smart"
+version = "0.1.0"
+edition = "2021"
+description = "A lightweight, human-friendly, and beautiful Git worktree manager"
+license = "MIT"
+default-run = "wt"
+
+[[bin]]
+name = "wt"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive", "cargo"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+thiserror = "1"
+comfy-table = "7"
+owo-colors = "4"
