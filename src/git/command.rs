@@ -1,17 +1,37 @@
 use std::path::Path;
+use std::process::Command;
 
 use crate::error::AppError;
 
-pub struct GitOutput {
-    pub stdout: String,
-    pub stderr: String,
-    pub success: bool,
-}
+pub fn run_git(args: &[&str], cwd: Option<&Path>, verbose: bool) -> Result<String, AppError> {
+    if verbose {
+        eprintln!("[EXEC] git {}", args.join(" "));
+    }
 
-pub fn run_git(dir: &Path, args: &[&str]) -> Result<GitOutput, AppError> {
-    todo!("execute git in {dir:?} with args {args:?}")
-}
+    let mut cmd = Command::new("git");
+    cmd.args(args);
 
-pub fn run_git_quiet(_dir: &Path, _args: &[&str]) -> Result<String, AppError> {
-    todo!()
+    if let Some(dir) = cwd {
+        cmd.current_dir(dir);
+    }
+
+    let output = cmd.output()?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+        let message = if stderr.is_empty() {
+            format!(
+                "git {} failed (exit code {})",
+                args.join(" "),
+                output.status
+            )
+        } else {
+            stderr
+        };
+        return Err(AppError::GitError { message });
+    }
+
+    Ok(stdout)
 }

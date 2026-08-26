@@ -23,8 +23,12 @@ fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Some(Commands::List) | None => cmd::list::run(&ctx),
-        Some(Commands::Add { branch }) => cmd::add::run(&ctx, &branch),
-        Some(Commands::Rm { target, force }) => cmd::rm::run(&ctx, &target, force),
-        Some(Commands::Clean) => cmd::clean::run(&ctx),
+        Some(Commands::Add { name, base, track }) => {
+            cmd::add::run(&ctx, &name, base.as_deref(), track.as_deref())
+        }
+        Some(Commands::Switch { target }) => cmd::switch::run(&ctx, &target),
+        Some(Commands::Remove { target, force }) => cmd::remove::run(&ctx, &target, force),
+        Some(Commands::Prune { yes }) => cmd::clean::run(&ctx, yes),
+        Some(Commands::Path { target }) => cmd::path::run(&ctx, &target),
     }
 }

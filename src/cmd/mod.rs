@@ -1,4 +1,6 @@
 pub mod add;
 pub mod clean;
 pub mod list;
-pub mod rm;
+pub mod path;
+pub mod remove;
+pub mod switch;
