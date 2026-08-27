@@ -332,3 +332,147 @@ fn path_resolves_dot_from_inside_subdirectory() {
     let _ = dir;
     let _ = root;
 }
+
+/// Create a throwaway repo at `root` with an initial commit on the default
+/// branch.
+fn init_repo_with_commit(root: &std::path::Path) {
+    let init = Command::new("git")
+        .arg("init")
+        .arg("-q")
+        .current_dir(root)
+        .status()
+        .expect("git init");
+    assert!(init.success());
+
+    let commit = Command::new("git")
+        .args(["commit", "--allow-empty", "-m", "initial"])
+        .current_dir(root)
+        .status()
+        .expect("git commit");
+    assert!(commit.success());
+}
+
+#[test]
+fn test_subcommand_from_nested_subdirectory() {
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let root = dir.path().to_path_buf();
+    init_repo_with_commit(&root);
+
+    let nested = root.join("src").join("nested").join("sub");
+    std::fs::create_dir_all(&nested).expect("create nested dir");
+
+    // `wt list` must not crash with an os error 2 (NotFound) from a cwd that
+    // is deeper than the repo root.
+    let mut list = wt();
+    list.current_dir(&nested).arg("list").assert().success();
+
+    // `wt path .` from the nested cwd must resolve to the enclosing worktree
+    // (the main repo), not fail to canonicalize `.git`.
+    let mut path = wt();
+    let out = path
+        .current_dir(&nested)
+        .arg("path")
+        .arg(".")
+        .output()
+        .expect("wt path .");
+    assert!(out.status.success(), "wt path . failed: {out:?}");
+
+    let stdout = String::from_utf8(out.stdout).expect("utf8");
+    let resolved = stdout.trim();
+    let expected = std::fs::canonicalize(&root).expect("canonicalize root");
+    assert_eq!(
+        std::path::Path::new(resolved),
+        expected.as_path(),
+        "did not resolve nested cwd to repo root worktree"
+    );
+}
+
+#[test]
+fn test_add_already_checked_out_branch_fails_cleanly() {
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let root = dir.path().to_path_buf();
+    init_repo_with_commit(&root);
+
+    // Check the branch out in the MAIN worktree so it already exists and is in
+    // use, but its inferred sibling path (`../<repo>-feature/x`) does not yet
+    // exist. This isolates the BranchAlreadyCheckedOut path from PathAlreadyExists.
+    let co = Command::new("git")
+        .args(["checkout", "-b", "feature/x"])
+        .current_dir(&root)
+        .status()
+        .expect("git checkout -b");
+    assert!(co.success());
+
+    let mut cmd = wt();
+    cmd.current_dir(&root)
+        .arg("add")
+        .arg("feature/x")
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("already checked out"));
+}
+
+#[test]
+fn test_case_insensitive_substring_and_short_query_resolution() {
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let root = dir.path().to_path_buf();
+    init_repo_with_commit(&root);
+
+    for branch in ["feature/login", "api"] {
+        let mut add = wt();
+        add.current_dir(&root)
+            .arg("add")
+            .arg(branch)
+            .assert()
+            .success();
+    }
+
+    // Compute the inferred sibling paths and canonicalize for robustness on
+    // symlinked file systems (e.g. /tmp -> /private/tmp on macOS).
+    let login_path = std::fs::canonicalize(root.join(sibling_name(&root, "feature-login")))
+        .expect("canonicalize login path");
+    let api_path = std::fs::canonicalize(root.join(sibling_name(&root, "api")))
+        .expect("canonicalize api path");
+
+    // Uppercase substring query must match case-insensitively.
+    let out = wt()
+        .current_dir(&root)
+        .arg("path")
+        .arg("LOGIN")
+        .output()
+        .expect("wt path LOGIN");
+    assert!(out.status.success(), "wt path LOGIN failed");
+    let resolved = String::from_utf8(out.stdout).expect("utf8");
+    assert_eq!(
+        std::path::Path::new(resolved.trim()),
+        login_path.as_path(),
+        "uppercase LOGIN did not resolve to feature/login"
+    );
+
+    // A very short (single-word) query must still resolve, not false-negative.
+    let out = wt()
+        .current_dir(&root)
+        .arg("path")
+        .arg("api")
+        .output()
+        .expect("wt path api");
+    assert!(out.status.success(), "wt path api failed");
+    let resolved = String::from_utf8(out.stdout).expect("utf8");
+    assert_eq!(
+        std::path::Path::new(resolved.trim()),
+        api_path.as_path(),
+        "short query 'api' did not resolve"
+    );
+
+    cleanup_worktree(&root, "feature/login");
+    cleanup_worktree(&root, "api");
+    let _ = dir;
+}
+
+/// Compute the sibling worktree path `wt add` would infer for a branch, as a
+/// sibling of `root` (i.e. `<parent>/<repo-name>-<sanitized>`).
+fn sibling_name(root: &std::path::Path, suffix: &str) -> std::path::PathBuf {
+    let parent = root.parent().expect("parent");
+    let name = root.file_name().expect("name").to_string_lossy();
+    parent.join(format!("{name}-{suffix}"))
+}

@@ -61,11 +61,16 @@ pub fn resolve_from_worktrees(
         }
     }
 
-    // 2. Substring match (unique)
+    // 2. Substring match (unique), case-insensitive.
+    let lower_query = query.to_lowercase();
     let substring_matches: Vec<&WorktreeInfo> = worktrees
         .iter()
         .filter(|wt| {
-            wt.name.contains(query) || wt.branch.as_deref().is_some_and(|b| b.contains(query))
+            wt.name.to_lowercase().contains(&lower_query)
+                || wt
+                    .branch
+                    .as_deref()
+                    .is_some_and(|b| b.to_lowercase().contains(&lower_query))
         })
         .collect();
 
@@ -110,12 +115,6 @@ pub fn resolve_from_worktrees(
 
     if scored.len() > 1 && scored[0].0 == scored[1].0 {
         return Err(AppError::MultipleWorktreesMatch {
-            query: query.to_owned(),
-        });
-    }
-
-    if scored[0].0 < 60 {
-        return Err(AppError::WorktreeNotFound {
             query: query.to_owned(),
         });
     }

@@ -95,25 +95,37 @@ pub fn run_git_status(
 }
 
 pub fn get_repo_root(verbose: bool) -> Result<PathBuf, AppError> {
+    // First find the top-level directory of the current worktree. `--show-toplevel`
+    // always returns an absolute path, so it is a stable anchor for resolving the
+    // (possibly relative) common dir below.
+    let toplevel = run_git(&["rev-parse", "--show-toplevel"], None, verbose)?;
+    let toplevel = PathBuf::from(toplevel);
+
     // `--git-common-dir` always points at the main repository's `.git`, even
     // when invoked from inside a linked worktree. We use it to derive the true
     // main repo root instead of `--show-toplevel`, which would return the
     // current worktree's root and cause incorrect sibling path inference.
-    let output = run_git(&["rev-parse", "--git-common-dir"], None, verbose)?;
+    //
+    // Run from the worktree's toplevel so any relative result (`.git` or
+    // `../.git`) resolves against that directory, NOT the process cwd — which
+    // may be a nested subdirectory where `cwd.join(".git")` does not exist.
+    let output = run_git(&["rev-parse", "--git-common-dir"], Some(&toplevel), verbose)?;
 
     let mut git_dir = PathBuf::from(output);
 
     // The common dir may be reported relative (e.g. `.git` from the main root);
-    // convert to an absolute path before canonicalizing.
+    // resolve it relative to the worktree toplevel before canonicalizing.
     if !git_dir.is_absolute() {
-        let cwd = std::env::current_dir().map_err(AppError::Io)?;
-        git_dir = cwd.join(git_dir);
+        git_dir = toplevel.join(git_dir);
     }
 
     let git_dir = std::fs::canonicalize(&git_dir).map_err(AppError::Io)?;
 
-    // The main repository root is the parent of its `.git` directory.
-    git_dir
+    // When invoked from the main worktree, `git_dir` is the main `.git`
+    // directory, whose parent is the main repository root. When invoked from a
+    // linked worktree, `git_dir` points at the main `.git` (the common dir),
+    // whose parent is again the main repository root.
+    let root = git_dir
         .parent()
         .map(Path::to_path_buf)
         .ok_or_else(|| AppError::GitError {
@@ -121,7 +133,11 @@ pub fn get_repo_root(verbose: bool) -> Result<PathBuf, AppError> {
                 "cannot determine repository root from `{}`",
                 git_dir.display()
             ),
-        })
+        })?;
+
+    // Canonicalize the derived root so it matches the canonicalized forms used
+    // elsewhere (e.g. `resolve_from_worktrees` and `wt remove`).
+    std::fs::canonicalize(&root).map_err(AppError::Io)
 }
 
 pub fn check_branch_exists(branch_name: &str, verbose: bool) -> Result<bool, AppError> {
@@ -140,11 +156,26 @@ pub fn check_branch_exists(branch_name: &str, verbose: bool) -> Result<bool, App
 
 /// Returns `true` if a branch of the given name exists on any configured
 /// remote (e.g. `origin/branch_name`).
+///
+/// Uses `for-each-ref` rather than `git branch --list "*/<branch>"` because the
+/// `*` glob does not match slashes (`/`), so it would never match slashed
+/// branches like `feature/login` on `origin/feature/login`.
 pub fn check_remote_branch_exists(branch_name: &str, verbose: bool) -> Result<bool, AppError> {
     let output = run_git(
-        &["branch", "--list", "--remote", &format!("*/{branch_name}")],
+        &[
+            "for-each-ref",
+            "--format=%(refname:strip=2)",
+            "refs/remotes",
+        ],
         None,
         verbose,
     )?;
-    Ok(!output.is_empty())
+
+    // Each line is `<remote>/<branch...>` (e.g. `origin/feature/login`);
+    // compare the branch portion (after the first `/`) to the looked-up name.
+    Ok(output.lines().any(|line| {
+        line.split_once('/')
+            .map(|(_, branch)| branch == branch_name)
+            .unwrap_or(false)
+    }))
 }

@@ -29,6 +29,22 @@ pub fn run(
         });
     }
 
+    // If the branch already exists AND is currently checked out in another
+    // worktree, `git worktree add` would fatal with a raw stderr message.
+    // Detect it up front and return a clean, actionable error instead.
+    if branch_exists {
+        let worktrees = git::get_worktrees(ctx.verbose)?;
+        if let Some(existing) = worktrees
+            .iter()
+            .find(|wt| wt.branch.as_deref() == Some(name))
+        {
+            return Err(AppError::BranchAlreadyCheckedOut {
+                branch: name.to_owned(),
+                path: existing.path.clone(),
+            });
+        }
+    }
+
     ops::add_worktree(
         ctx.verbose,
         &target_path,

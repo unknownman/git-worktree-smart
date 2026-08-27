@@ -219,6 +219,11 @@ pub fn infer_worktree_path(repo_root: &Path, branch_name: &str) -> Result<PathBu
         })?;
 
     let sanitized = sanitize_branch_name(branch_name);
+    if sanitized.chars().all(|c| c == '-') {
+        return Err(AppError::PathInferenceFailed {
+            reason: "invalid branch name for worktree path".to_string(),
+        });
+    }
     let dir_name = format!("{repo_name}-{sanitized}");
 
     let parent = repo_root

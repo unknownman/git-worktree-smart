@@ -44,6 +44,9 @@ pub enum AppError {
     #[error("The branch `{branch}` already exists, so --base and --track were ignored.")]
     BranchAlreadyExistsIgnoringArgs { branch: String },
 
+    #[error("Branch `{branch}` is already checked out at `{path}`.")]
+    BranchAlreadyCheckedOut { branch: String, path: PathBuf },
+
     #[error("Cannot create worktree: a file or directory already exists at `{path}`.")]
     PathAlreadyExists { path: PathBuf },
 
