@@ -86,6 +86,12 @@ fn get_head_message(hash: &str, verbose: bool) -> Result<String, AppError> {
 }
 
 pub fn get_worktree_status(cwd: &Path, verbose: bool) -> Result<WorktreeStatus, AppError> {
+    // If the worktree's directory no longer exists (stale), there is nothing
+    // to inspect — report a clean status rather than failing the whole call.
+    if !cwd.is_dir() {
+        return Ok(WorktreeStatus::clean());
+    }
+
     let is_dirty = check_dirty(cwd, verbose)?;
     let (ahead, behind) = get_ahead_behind(cwd, verbose)?;
 

@@ -115,7 +115,7 @@ pub fn print_switch_success(info: &WorktreeInfo) {
     let path = shorten_home(&info.path);
 
     println!(
-        "{} {} {}\n",
+        "{} {} {}",
         "→".cyan().bold(),
         "Target resolved:".bold(),
         path.cyan(),
@@ -126,11 +126,11 @@ pub fn print_switch_success(info: &WorktreeInfo) {
         "A child process cannot change your shell's directory.".dimmed(),
     );
     println!(
-        "  {} {} {}",
+        "{} {}",
         "To switch instantly, use:".dimmed(),
         "cd $(wt path <query>)".yellow().bold(),
-        "\n".dimmed(),
     );
+    println!();
     println!(
         "{}",
         "Pro-tip: Add this to your ~/.zshrc or ~/.bashrc:".dimmed()

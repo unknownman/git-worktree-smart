@@ -9,9 +9,19 @@ pub fn add_worktree(
     branch_name: &str,
     base: Option<&str>,
     track: Option<&str>,
+    branch_exists: bool,
 ) -> Result<(), AppError> {
     let mut args = vec!["worktree", "add"];
 
+    if branch_exists {
+        // Check out an existing branch: `git worktree add <path> <name>`.
+        args.push(path_str(path)?);
+        args.push(branch_name);
+        run_git(&args, None, verbose)?;
+        return Ok(());
+    }
+
+    // Create a new branch from an optional base, with optional upstream tracking.
     if let Some(upstream) = track {
         args.extend_from_slice(&["--track", upstream]);
     }
@@ -22,13 +32,16 @@ pub fn add_worktree(
         args.extend_from_slice(&["-b", branch_name]);
     }
 
-    let path_str = path.to_str().ok_or_else(|| AppError::PathInferenceFailed {
-        reason: format!("path contains non-UTF-8 characters: {}", path.display()),
-    })?;
-    args.push(path_str);
+    args.push(path_str(path)?);
 
     run_git(&args, None, verbose)?;
     Ok(())
+}
+
+fn path_str(path: &Path) -> Result<&str, AppError> {
+    path.to_str().ok_or_else(|| AppError::PathInferenceFailed {
+        reason: format!("path contains non-UTF-8 characters: {}", path.display()),
+    })
 }
 
 pub fn remove_worktree(verbose: bool, path: &Path, force: bool) -> Result<(), AppError> {

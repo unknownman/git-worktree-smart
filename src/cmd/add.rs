@@ -1,6 +1,6 @@
 use crate::error::AppError;
 use crate::git;
-use crate::git::command::get_repo_root;
+use crate::git::command::{check_branch_exists, get_repo_root};
 use crate::git::ops;
 use crate::git::parse::infer_worktree_path;
 use crate::models::WorktreeInfo;
@@ -20,7 +20,9 @@ pub fn run(
         return Err(AppError::WorktreeAlreadyExists { path: target_path });
     }
 
-    ops::add_worktree(ctx.verbose, &target_path, name, base, track)?;
+    let branch_exists = check_branch_exists(name, ctx.verbose)?;
+
+    ops::add_worktree(ctx.verbose, &target_path, name, base, track, branch_exists)?;
 
     let worktrees = git::get_worktrees(ctx.verbose)?;
     let info = worktrees

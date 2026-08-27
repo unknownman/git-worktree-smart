@@ -18,9 +18,6 @@ pub enum AppError {
     #[error("Cannot remove the main worktree at `{path}` — it is the root of the repository.")]
     CannotRemoveMainWorktree { path: PathBuf },
 
-    #[error("Dry run complete — nothing was pruned. Run with --yes to remove those references.")]
-    PruneDryRun,
-
     #[error("Git failed: {message}")]
     GitError { message: String },
 

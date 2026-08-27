@@ -25,9 +25,5 @@ pub fn run(ctx: &Context, yes: bool) -> Result<(), AppError> {
         output::human::print_prune_dry_run(&stale);
     }
 
-    if !stale.is_empty() {
-        return Err(AppError::PruneDryRun);
-    }
-
     Ok(())
 }
