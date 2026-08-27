@@ -19,8 +19,11 @@ pub enum AppError {
     #[error("failed to resolve worktree path: {reason}")]
     PathInferenceFailed { reason: String },
 
-    #[error("worktree not found: `{target}`")]
-    WorktreeNotFound { target: String },
+    #[error("worktree not found for query `{query}`")]
+    WorktreeNotFound { query: String },
+
+    #[error("multiple worktrees match query `{query}`, please be more specific")]
+    MultipleWorktreesMatch { query: String },
 
     #[error("branch `{branch}` already has a linked worktree")]
     BranchAlreadyLinked { branch: String },

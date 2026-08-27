@@ -110,3 +110,40 @@ pub fn print_add_success(info: &WorktreeInfo) {
         path.dimmed(),
     );
 }
+
+pub fn print_switch_success(info: &WorktreeInfo) {
+    let path = shorten_home(&info.path);
+
+    println!(
+        "{} {} {}\n",
+        "→".cyan().bold(),
+        "Target resolved:".bold(),
+        path.cyan(),
+    );
+    println!(
+        "{} {}",
+        "💡".dimmed(),
+        "A child process cannot change your shell's directory.".dimmed(),
+    );
+    println!(
+        "  {} {} {}",
+        "To switch instantly, use:".dimmed(),
+        "cd $(wt path <query>)".yellow().bold(),
+        "\n".dimmed(),
+    );
+    println!(
+        "{}",
+        "Pro-tip: Add this to your ~/.zshrc or ~/.bashrc:".dimmed()
+    );
+    println!(
+        "  {}",
+        r#"wt() {
+    if [ "$1" = "switch" ]; then
+        cd "$(command wt path "$2")"
+    else
+        command wt "$@"
+    fi
+}"#
+        .dimmed()
+    );
+}
