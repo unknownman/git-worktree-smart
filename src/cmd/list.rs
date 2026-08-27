@@ -23,7 +23,14 @@ pub fn run(ctx: &Context) -> Result<(), AppError> {
         crate::git::command::run_git(&["rev-parse", "--show-toplevel"], None, false).ok();
     let current_idx = current_toplevel.and_then(|toplevel| {
         let toplevel_path = std::path::Path::new(&toplevel);
-        worktrees.iter().position(|wt| wt.path == toplevel_path)
+        // Canonicalize both sides so symlink mismatches (e.g. /tmp vs
+        // /private/tmp) don't defeat the active-worktree indicator.
+        let toplevel_canon =
+            std::fs::canonicalize(toplevel_path).unwrap_or_else(|_| toplevel_path.to_path_buf());
+        worktrees.iter().position(|wt| {
+            let wt_canon = std::fs::canonicalize(&wt.path).unwrap_or_else(|_| wt.path.clone());
+            wt_canon == toplevel_canon
+        })
     });
 
     if ctx.json {

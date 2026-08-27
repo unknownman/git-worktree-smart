@@ -11,23 +11,33 @@ pub fn get_worktrees(verbose: bool) -> Result<Vec<WorktreeInfo>, AppError> {
 
     // Fetch the head message and status for every worktree concurrently. Each
     // spawns several git subprocesses, so parallelizing avoids a long serial
-    // stall. Thread-level errors are captured per-worktree so a single failure
-    // (e.g. a missing dir) does not crash the whole command.
-    std::thread::scope(|scope| {
-        for wt in &mut worktrees {
-            scope.spawn(move || {
-                let head_msg = get_head_message(&wt.head_hash, verbose).ok();
-                let status = get_worktree_status(&wt.path, verbose).ok();
+    // stall. Threads report per-worktree errors so a single failure bubbles up
+    // to the caller instead of silently marking a dirty worktree as clean.
+    let scope_result: Result<(), AppError> = std::thread::scope(|scope| {
+        let handles: Vec<_> = worktrees
+            .iter_mut()
+            .map(|wt| {
+                scope.spawn(move || {
+                    let head_msg = get_head_message(&wt.head_hash, verbose)?;
+                    let status = get_worktree_status(&wt.path, verbose)?;
 
-                if let Some(msg) = head_msg {
-                    wt.head_msg = msg;
-                }
-                if let Some(st) = status {
-                    wt.status = st;
-                }
-            });
+                    wt.head_msg = head_msg;
+                    wt.status = status;
+                    Ok::<(), AppError>(())
+                })
+            })
+            .collect();
+
+        for handle in handles {
+            let thread_result = handle.join().map_err(|_| AppError::GitError {
+                message: "worktree status thread panicked".to_owned(),
+            })?;
+            thread_result?;
         }
+        Ok(())
     });
+
+    scope_result?;
 
     Ok(worktrees)
 }

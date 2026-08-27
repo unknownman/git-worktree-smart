@@ -40,10 +40,12 @@ fn dispatch(cli: &Cli, ctx: &Context) -> Result<(), AppError> {
         Some(Commands::Add { name, base, track }) => {
             cmd::add::run(ctx, name, base.as_deref(), track.as_deref())
         }
-        Some(Commands::Switch { target }) => cmd::switch::run(ctx, target),
-        Some(Commands::Remove { target, force }) => cmd::remove::run(ctx, target, *force),
+        Some(Commands::Switch { target }) => cmd::switch::run(ctx, &target.join(" ")),
+        Some(Commands::Remove { target, force }) => {
+            cmd::remove::run(ctx, &target.join(" "), *force)
+        }
         Some(Commands::Prune { yes }) => cmd::clean::run(ctx, *yes),
-        Some(Commands::Path { target }) => cmd::path::run(ctx, target),
+        Some(Commands::Path { target }) => cmd::path::run(ctx, &target.join(" ")),
     }
 }
 

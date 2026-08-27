@@ -138,8 +138,12 @@ pub fn print_switch_success(info: &WorktreeInfo) {
     eprintln!(
         "  {}",
         r#"wt() {
-    if [ "$1" = "switch" ]; then
-        cd "$(command wt path "$2")"
+    if [ "$1" = "switch" ] || [ "$1" = "cd" ]; then
+        local target_path
+        target_path="$(command wt path "${@:2}")"
+        if [ $? -eq 0 ] && [ -n "$target_path" ]; then
+            cd "$target_path"
+        fi
     else
         command wt "$@"
     fi

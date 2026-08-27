@@ -27,10 +27,12 @@ pub fn run_git(args: &[&str], cwd: Option<&Path>, verbose: bool) -> Result<Strin
     Ok(status.stdout)
 }
 
-/// Like [`run_git`] but returns the captured `stderr` on success.
+/// Like [`run_git`] but returns the captured combined output on success.
 ///
 /// Some git subcommands (e.g. `worktree prune --dry-run --verbose`) write
-/// their human-readable output to stderr even on success.
+/// their human-readable output to stderr, while others write to stdout. To
+/// stay compatible across Git versions, combine both streams so no content is
+/// ever missed.
 pub fn run_git_stderr(
     args: &[&str],
     cwd: Option<&Path>,
@@ -50,7 +52,21 @@ pub fn run_git_stderr(
         return Err(AppError::GitError { message });
     }
 
-    Ok(status.stderr)
+    Ok(combine_output(&status.stdout, &status.stderr))
+}
+
+fn combine_output(stdout: &str, stderr: &str) -> String {
+    let mut combined = String::new();
+    if !stdout.is_empty() {
+        combined.push_str(stdout.trim());
+        if !stderr.is_empty() {
+            combined.push('\n');
+        }
+    }
+    if !stderr.is_empty() {
+        combined.push_str(stderr.trim());
+    }
+    combined
 }
 
 pub fn run_git_status(

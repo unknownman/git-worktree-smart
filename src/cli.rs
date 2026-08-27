@@ -84,7 +84,11 @@ pub enum Commands {
     )]
     Switch {
         /// Branch name, path, or substring to match against.
-        target: String,
+        ///
+        /// Multiple words are joined with spaces to form a fuzzy query
+        /// (e.g. `wt switch feature auth`).
+        #[arg(num_args(1..))]
+        target: Vec<String>,
     },
 
     /// Safely remove an existing worktree.
@@ -101,7 +105,11 @@ pub enum Commands {
     )]
     Remove {
         /// The branch name, path, or substring of the worktree to remove.
-        target: String,
+        ///
+        /// Multiple words are joined with spaces to form a fuzzy query
+        /// (e.g. `wt remove feature auth`).
+        #[arg(num_args(1..))]
+        target: Vec<String>,
 
         /// Force removal even if the worktree has uncommitted changes or
         /// unpushed commits.
@@ -134,6 +142,10 @@ pub enum Commands {
             cd $(wt path feature/auth)     # shell-eval to change directory")]
     Path {
         /// Branch name or path substring to match against.
-        target: String,
+        ///
+        /// Multiple words are joined with spaces to form a fuzzy query
+        /// (e.g. `wt path feature auth`).
+        #[arg(num_args(1..))]
+        target: Vec<String>,
     },
 }
