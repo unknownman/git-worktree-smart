@@ -156,8 +156,13 @@ Because a child process cannot change the parent shell's directory, add this to
 
 ```bash
 wt() {
-    if [ "$1" = "switch" ]; then
-        cd "$(command wt path "$2")"
+    if [ "$1" = "switch" ] || [ "$1" = "cd" ]; then
+        shift
+        local target_path
+        target_path="$(command wt path "$@")"
+        if [ $? -eq 0 ] && [ -n "$target_path" ]; then
+            cd "$target_path"
+        fi
     else
         command wt "$@"
     fi

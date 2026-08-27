@@ -7,6 +7,12 @@ pub enum AppError {
     #[error("Not a git repository (or any of the parent directories). Run `git init` first.")]
     NotAGitRepository,
 
+    #[error("Git executable was not found in your PATH. Please ensure Git is installed.")]
+    GitNotFound,
+
+    #[error("`wt` must be run inside a working tree, not a bare repository.")]
+    BareRepositoryNotSupported,
+
     #[error("Worktree at `{path}` has uncommitted changes. 💡 Pass --force to delete it anyway.")]
     WorktreeIsDirty { path: PathBuf },
 
@@ -26,6 +32,9 @@ pub enum AppError {
     )]
     StaleWorktree { path: PathBuf },
 
+    #[error("Worktree at `{path}` is in a detached HEAD state with commits not reachable from any branch. 💡 Pass --force to delete it anyway.")]
+    DetachedHeadWithUnreachableCommits { path: PathBuf },
+
     #[error("Git failed: {message}")]
     GitError { message: String },
 
@@ -41,8 +50,8 @@ pub enum AppError {
     #[error("Multiple worktrees match `{query}`. Please be more specific.")]
     MultipleWorktreesMatch { query: String },
 
-    #[error("The branch `{branch}` already exists, so --base and --track were ignored.")]
-    BranchAlreadyExistsIgnoringArgs { branch: String },
+    #[error("Branch `{branch}` already exists locally. Cannot specify `--base` or `--track` when checking out an existing branch.")]
+    BranchAlreadyExistsCannotSpecifyBaseOrTrack { branch: String },
 
     #[error("Branch `{branch}` is already checked out at `{path}`.")]
     BranchAlreadyCheckedOut { branch: String, path: PathBuf },

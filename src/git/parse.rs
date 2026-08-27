@@ -156,6 +156,41 @@ pub fn get_worktree_status(cwd: &Path, verbose: bool) -> Result<WorktreeStatus, 
     })
 }
 
+/// Build a complete [`WorktreeInfo`] for a single known worktree without
+/// scanning the whole repository. Used by `wt add` to report the freshly
+/// created worktree efficiently instead of re-running the full parallel
+/// `get_worktrees` sweep.
+pub fn get_worktree_info(
+    path: &Path,
+    branch: Option<&str>,
+    verbose: bool,
+) -> Result<WorktreeInfo, AppError> {
+    let name = derive_name(path, branch);
+
+    let head_hash = if !path.is_dir() {
+        String::new()
+    } else {
+        // Fetch only this worktree's HEAD so we don't rescan every worktree.
+        run_git(
+            &["rev-parse", "--verify", "--quiet", "HEAD"],
+            Some(path),
+            verbose,
+        )
+        .unwrap_or_default()
+    };
+
+    let head_msg = get_head_message(&head_hash, path, verbose)?;
+
+    Ok(WorktreeInfo {
+        path: path.to_path_buf(),
+        name,
+        branch: branch.map(|b| b.to_owned()),
+        head_hash,
+        head_msg,
+        status: WorktreeStatus::clean(),
+    })
+}
+
 pub fn parse_dirty(porcelain: &str) -> bool {
     !porcelain.trim().is_empty()
 }

@@ -3,7 +3,6 @@ use crate::git;
 use crate::git::command::{check_branch_exists, check_remote_branch_exists, get_repo_root};
 use crate::git::ops;
 use crate::git::parse::infer_worktree_path;
-use crate::models::WorktreeInfo;
 use crate::output;
 use crate::Context;
 
@@ -24,7 +23,7 @@ pub fn run(
     let remote_branch_exists = check_remote_branch_exists(name, ctx.verbose)?;
 
     if branch_exists && (base.is_some() || track.is_some()) {
-        return Err(AppError::BranchAlreadyExistsIgnoringArgs {
+        return Err(AppError::BranchAlreadyExistsCannotSpecifyBaseOrTrack {
             branch: name.to_owned(),
         });
     }
@@ -55,24 +54,9 @@ pub fn run(
         remote_branch_exists,
     )?;
 
-    let worktrees = git::get_worktrees(ctx.verbose)?;
-    // Git canonicalizes paths (e.g. resolving /tmp -> /private/tmp on macOS),
-    // so compare canonical forms to reliably locate the freshly added worktree.
-    let target_canon = std::fs::canonicalize(&target_path).unwrap_or_else(|_| target_path.clone());
-    let info = worktrees
-        .into_iter()
-        .find(|wt| {
-            let wt_canon = std::fs::canonicalize(&wt.path).unwrap_or_else(|_| wt.path.clone());
-            wt_canon == target_canon
-        })
-        .unwrap_or_else(|| WorktreeInfo {
-            path: target_path.clone(),
-            name: name.to_owned(),
-            branch: Some(name.to_owned()),
-            head_hash: String::new(),
-            head_msg: String::new(),
-            status: crate::models::WorktreeStatus::clean(),
-        });
+    // Build the worktree's completion info from the known path + branch with a
+    // single HEAD query — no need to re-scan every worktree in the repository.
+    let info = git::get_worktree_info(&target_path, Some(name), ctx.verbose)?;
 
     if ctx.json {
         output::json::print_single(&info)?;

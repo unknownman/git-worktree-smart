@@ -57,6 +57,14 @@ pub fn run(ctx: &Context, target: &str, force: bool) -> Result<(), AppError> {
                 ahead: info.status.ahead,
             });
         }
+        // A detached HEAD worktree has no upstream to measure `ahead` against,
+        // so commits made here can silently orphan. Guard against data loss by
+        // verifying the commit is still reachable from some branch.
+        if info.branch.is_none()
+            && !git::is_commit_merged_or_reachable(&info.head_hash, &info.path, ctx.verbose)?
+        {
+            return Err(AppError::DetachedHeadWithUnreachableCommits { path: info.path });
+        }
     }
 
     git::ops::remove_worktree(ctx.verbose, &info.path, force)?;

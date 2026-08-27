@@ -8,11 +8,13 @@ fn wt() -> assert_cmd::Command {
 
 /// Create a throwaway git repo and return its path, with a `Command` already
 /// set to run inside it.
+///
+/// Forces the initial branch to `main` so tests are independent of the user's
+/// global `init.defaultBranch` setting (e.g. systems defaulting to `master`).
 fn repo() -> (tempfile::TempDir, assert_cmd::Command) {
     let dir = tempfile::tempdir().expect("create tempdir");
     let status = Command::new("git")
-        .arg("init")
-        .arg("-q")
+        .args(["init", "-q", "-b", "main"])
         .current_dir(dir.path())
         .status()
         .expect("git init");
@@ -140,8 +142,7 @@ fn repo_with_worktree() -> (tempfile::TempDir, std::path::PathBuf, std::path::Pa
     let root = dir.path().to_path_buf();
 
     let init = Command::new("git")
-        .arg("init")
-        .arg("-q")
+        .args(["init", "-q", "-b", "main"])
         .current_dir(&root)
         .status()
         .expect("git init");
@@ -337,8 +338,7 @@ fn path_resolves_dot_from_inside_subdirectory() {
 /// branch.
 fn init_repo_with_commit(root: &std::path::Path) {
     let init = Command::new("git")
-        .arg("init")
-        .arg("-q")
+        .args(["init", "-q", "-b", "main"])
         .current_dir(root)
         .status()
         .expect("git init");
@@ -475,4 +475,95 @@ fn sibling_name(root: &std::path::Path, suffix: &str) -> std::path::PathBuf {
     let parent = root.parent().expect("parent");
     let name = root.file_name().expect("name").to_string_lossy();
     parent.join(format!("{name}-{suffix}"))
+}
+
+#[test]
+fn test_remove_detached_worktree_with_unreachable_commits_fails_without_force() {
+    let (dir, root, linked) = repo_with_worktree();
+
+    // Detach HEAD in the linked worktree and add a commit reachable ONLY from
+    // the detached HEAD (no branch points at it). Removing without --force must
+    // refuse, or the commit would be orphaned and lost.
+    let detach = Command::new("git")
+        .args(["checkout", "--detach"])
+        .current_dir(&linked)
+        .status()
+        .expect("git checkout --detach");
+    assert!(detach.success());
+
+    let commit = Command::new("git")
+        .args(["commit", "--allow-empty", "-m", "only on detached head"])
+        .current_dir(&linked)
+        .status()
+        .expect("git commit");
+    assert!(commit.success());
+
+    // Resolve by absolute path (the branch name is no longer valid once
+    // detached) and attempt removal from the main repo root.
+    let mut cmd = wt();
+    cmd.current_dir(&root)
+        .arg("remove")
+        .arg(linked.to_string_lossy().as_ref())
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("detached HEAD state"));
+
+    cleanup_worktree(&root, "feature/demo");
+    let _ = dir;
+}
+
+#[test]
+fn test_bare_repository_returns_clean_error() {
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let bare = dir.path().join("bare.git");
+    let init = Command::new("git")
+        .args(["init", "--bare", "-q"])
+        .arg(&bare)
+        .status()
+        .expect("git init --bare");
+    assert!(init.success());
+
+    // `wt add` triggers `get_repo_root` (--show-toplevel), which fails in a
+    // bare repo; it must surface a clean, actionable error instead of a raw
+    // git fatal.
+    let mut cmd = wt();
+    cmd.current_dir(&bare)
+        .arg("add")
+        .arg("feature/x")
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("bare repository"));
+}
+
+#[test]
+fn test_add_existing_branch_with_base_or_track_is_rejected() {
+    let (dir, root) = {
+        let d = tempfile::tempdir().expect("create tempdir");
+        let r = d.path().to_path_buf();
+        init_repo_with_commit(&r);
+        (d, r)
+    };
+
+    // Create a local branch (not checked out anywhere) so the inferred sibling
+    // path does not already exist.
+    let branch = Command::new("git")
+        .args(["branch", "existing"])
+        .current_dir(&root)
+        .status()
+        .expect("git branch existing");
+    assert!(branch.success());
+
+    // Specifying --base or --track for an already-existing branch must be
+    // rejected cleanly (renamed BranchAlreadyExistsCannotSpecifyBaseOrTrack).
+    // `base` is a positional argument, so pass it as the second value.
+    let mut cmd = wt();
+    cmd.current_dir(&root)
+        .arg("add")
+        .arg("existing")
+        .arg("main")
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("already exists locally"));
+
+    let _ = dir;
 }

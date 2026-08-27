@@ -13,15 +13,7 @@ pub fn run_git(args: &[&str], cwd: Option<&Path>, verbose: bool) -> Result<Strin
     let status = run_git_status(args, cwd, verbose)?;
 
     if !status.success {
-        if status.stderr.contains("not a git repository") {
-            return Err(AppError::NotAGitRepository);
-        }
-        let message = if status.stderr.is_empty() {
-            format!("git {} failed (exit code unknown)", args.join(" "))
-        } else {
-            status.stderr
-        };
-        return Err(AppError::GitError { message });
+        return Err(map_git_failure(args, &status));
     }
 
     Ok(status.stdout)
@@ -41,18 +33,30 @@ pub fn run_git_stderr(
     let status = run_git_status(args, cwd, verbose)?;
 
     if !status.success {
-        if status.stderr.contains("not a git repository") {
-            return Err(AppError::NotAGitRepository);
-        }
-        let message = if status.stderr.is_empty() {
-            format!("git {} failed (exit code unknown)", args.join(" "))
-        } else {
-            status.stderr
-        };
-        return Err(AppError::GitError { message });
+        return Err(map_git_failure(args, &status));
     }
 
     Ok(combine_output(&status.stdout, &status.stderr))
+}
+
+/// Translate a failed `git` invocation into the most specific [`AppError`].
+fn map_git_failure(args: &[&str], status: &CommandStatus) -> AppError {
+    let stderr = &status.stderr;
+
+    if stderr.contains("not a git repository") {
+        return AppError::NotAGitRepository;
+    }
+    if stderr.contains("this operation must be run in a work tree")
+        || stderr.contains("must be run in a work tree")
+    {
+        return AppError::BareRepositoryNotSupported;
+    }
+    let message = if stderr.is_empty() {
+        format!("git {} failed (exit code unknown)", args.join(" "))
+    } else {
+        stderr.clone()
+    };
+    AppError::GitError { message }
 }
 
 fn combine_output(stdout: &str, stderr: &str) -> String {
@@ -85,7 +89,14 @@ pub fn run_git_status(
         cmd.current_dir(dir);
     }
 
-    let output = cmd.output()?;
+    let output = match cmd.output() {
+        Ok(o) => o,
+        // The `git` executable itself could not be spawned (not on PATH).
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Err(AppError::GitNotFound);
+        }
+        Err(e) => return Err(AppError::Io(e)),
+    };
 
     Ok(CommandStatus {
         success: output.status.success(),
@@ -178,4 +189,32 @@ pub fn check_remote_branch_exists(branch_name: &str, verbose: bool) -> Result<bo
             .map(|(_, branch)| branch == branch_name)
             .unwrap_or(false)
     }))
+}
+
+/// Returns `true` if the given commit is reachable from at least one branch
+/// (i.e. is merged into any branch head).
+///
+/// This is used to detect detached-HEAD worktrees whose commits would become
+/// orphaned (unreachable) and lost if the worktree is deleted without `--force`.
+///
+/// Uses `git for-each-ref --contains <hash> refs/heads` (rather than
+/// `git branch --contains`, which also emits a detached-HEAD marker line even
+/// when no real branch contains the commit) so only actual branch refs count.
+pub fn is_commit_merged_or_reachable(
+    hash: &str,
+    cwd: &Path,
+    verbose: bool,
+) -> Result<bool, AppError> {
+    if hash.is_empty() || hash.chars().all(|c| c == '0') {
+        // No commits yet: nothing can be orphaned.
+        return Ok(true);
+    }
+    // List every branch ref that contains the commit; non-empty means it is
+    // reachable from at least one branch.
+    let output = run_git(
+        &["for-each-ref", "--contains", hash, "refs/heads"],
+        Some(cwd),
+        verbose,
+    )?;
+    Ok(!output.is_empty())
 }
