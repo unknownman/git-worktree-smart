@@ -26,16 +26,28 @@ pub fn resolve_from_worktrees(
     }
 
     // 0. Path resolution: if the query can be canonicalized to an absolute
-    // path (e.g. `.`, `..`, or a relative dir), match it against the
-    // canonicalized worktree paths so `wt path .` or `wt rm .` resolve to the
-    // worktree you are currently standing in.
+    // path (e.g. `.`, `..`, or a relative dir), find the worktree that
+    // encloses it. When run from a subdirectory, the query canonicalizes to a
+    // nested path, so we match with `starts_with` and select the longest
+    // matching worktree (if multiple nest) to pick the most specific one.
     if let Ok(query_canon) = std::fs::canonicalize(query) {
+        let mut best: Option<(usize, &WorktreeInfo)> = None;
         for wt in worktrees {
             if let Ok(wt_canon) = std::fs::canonicalize(&wt.path) {
-                if wt_canon == query_canon {
-                    return Ok(wt.clone());
+                if query_canon.starts_with(&wt_canon) {
+                    // Prefer the worktree whose root is deepest along the path.
+                    if let Some((best_len, _)) = best {
+                        if wt_canon.as_os_str().len() > best_len {
+                            best = Some((wt_canon.as_os_str().len(), wt));
+                        }
+                    } else {
+                        best = Some((wt_canon.as_os_str().len(), wt));
+                    }
                 }
             }
+        }
+        if let Some((_, wt)) = best {
+            return Ok(wt.clone());
         }
     }
 
@@ -117,6 +129,26 @@ mod tests {
 
     use super::*;
     use crate::models::WorktreeStatus;
+
+    /// Restores the process working directory when dropped so that temporarily
+    /// changing cwd inside a test never leaks into other (parallel) tests.
+    struct ChdirGuard {
+        original: PathBuf,
+    }
+
+    impl ChdirGuard {
+        fn new(target: &std::path::Path) -> std::io::Result<Self> {
+            let original = std::env::current_dir()?;
+            std::env::set_current_dir(target)?;
+            Ok(Self { original })
+        }
+    }
+
+    impl Drop for ChdirGuard {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.original);
+        }
+    }
 
     fn worktree(name: &str, branch: Option<&str>) -> WorktreeInfo {
         WorktreeInfo {
@@ -208,5 +240,87 @@ mod tests {
     fn test_empty_worktrees() {
         let result = resolve_from_worktrees(&[], "main");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_path_resolves_dot_to_enclosing_worktree() {
+        // Real directories so canonicalization succeeds and the path step runs.
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let wt_dir = dir.path().join("project-feat");
+        std::fs::create_dir_all(&wt_dir).expect("create wt dir");
+
+        let worktrees = vec![WorktreeInfo {
+            path: wt_dir.clone(),
+            name: "feat".to_owned(),
+            branch: Some("feat".to_owned()),
+            head_hash: "abc1234".to_owned(),
+            head_msg: "msg".to_owned(),
+            status: WorktreeStatus::clean(),
+        }];
+
+        // Temporarily change cwd into the worktree so `.` canonicalizes to it,
+        // then restore the original cwd so parallel tests are unaffected.
+        let cwd_guard = ChdirGuard::new(&wt_dir).expect("chdir");
+
+        let result = resolve_from_worktrees(&worktrees, ".").unwrap();
+        assert_eq!(result.name, "feat");
+
+        drop(cwd_guard);
+
+        // Also verify the absolute path resolves directly.
+        let result = resolve_from_worktrees(&worktrees, wt_dir.to_string_lossy().as_ref()).unwrap();
+        assert_eq!(result.name, "feat");
+    }
+
+    #[test]
+    fn test_path_resolves_subdirectory_to_enclosing_worktree() {
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let wt_dir = dir.path().join("project-feat");
+        let sub = wt_dir.join("src").join("nested");
+        std::fs::create_dir_all(&sub).expect("create subdir");
+
+        let worktrees = vec![WorktreeInfo {
+            path: wt_dir.clone(),
+            name: "feat".to_owned(),
+            branch: Some("feat".to_owned()),
+            head_hash: "abc1234".to_owned(),
+            head_msg: "msg".to_owned(),
+            status: WorktreeStatus::clean(),
+        }];
+
+        // Query is a canonicalized path *inside* the worktree; it must resolve
+        // to the enclosing worktree (starts_with), not require equality.
+        let result = resolve_from_worktrees(&worktrees, sub.to_string_lossy().as_ref()).unwrap();
+        assert_eq!(result.name, "feat");
+    }
+
+    #[test]
+    fn test_path_nested_worktrees_prefers_deepest_match() {
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let outer_dir = dir.path().join("outer");
+        let inner_dir = outer_dir.join("inner");
+        std::fs::create_dir_all(&inner_dir).expect("create dirs");
+
+        let worktrees = vec![
+            WorktreeInfo {
+                path: inner_dir.clone(),
+                name: "inner".to_owned(),
+                branch: Some("inner".to_owned()),
+                head_hash: "abc1234".to_owned(),
+                head_msg: "msg".to_owned(),
+                status: WorktreeStatus::clean(),
+            },
+            WorktreeInfo {
+                path: outer_dir.clone(),
+                name: "outer".to_owned(),
+                branch: Some("outer".to_owned()),
+                head_hash: "abc1234".to_owned(),
+                head_msg: "msg".to_owned(),
+                status: WorktreeStatus::clean(),
+            },
+        ];
+
+        let result = resolve_from_worktrees(&worktrees, inner_dir.to_string_lossy().as_ref());
+        assert_eq!(result.unwrap().name, "inner");
     }
 }

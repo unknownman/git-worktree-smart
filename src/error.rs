@@ -18,6 +18,9 @@ pub enum AppError {
     #[error("Cannot remove the main worktree at `{path}` — it is the root of the repository.")]
     CannotRemoveMainWorktree { path: PathBuf },
 
+    #[error("Cannot remove the active worktree you are currently in (`{path}`). Switch to another worktree first: `cd $(wt path main)`")]
+    CannotRemoveActiveWorktree { path: PathBuf },
+
     #[error(
         "Worktree directory at `{path}` is missing. Use `wt prune` to clean up stale references."
     )]

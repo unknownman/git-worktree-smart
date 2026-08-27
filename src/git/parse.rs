@@ -109,6 +109,12 @@ fn derive_name(path: &Path, branch: Option<&str>) -> String {
 }
 
 fn get_head_message(hash: &str, cwd: &Path, verbose: bool) -> Result<String, AppError> {
+    // If the worktree directory no longer exists, `Command::current_dir` below
+    // would fail with an OS I/O error. Surface it as stale instead.
+    if !cwd.is_dir() {
+        return Ok("(stale)".to_owned());
+    }
+
     // The null hash means the repository has no commits yet (fresh `git init`).
     if hash.is_empty() || hash.chars().all(|c| c == '0') {
         return Ok("(no commits yet)".to_owned());
@@ -247,15 +253,30 @@ pub fn parse_prune_dry_run(output: &str) -> Vec<String> {
                 return (!name.is_empty()).then(|| format!("worktrees/{name}"));
             }
 
-            // Older git: "Removing worktree: /abs/path"
+            // Older git: "Removing worktree: /abs/path" — some versions wrap
+            // paths containing spaces in quotes.
             if let Some(rest) = trimmed.strip_prefix("Removing worktree: ") {
-                let path = rest.split(':').next().unwrap_or(rest).trim();
+                let path = strip_quotes(rest.split(':').next().unwrap_or(rest).trim());
                 return (!path.is_empty()).then(|| path.to_owned());
             }
 
             None
         })
         .collect()
+}
+
+/// Strip matching leading/trailing single or double quotes from a path.
+fn strip_quotes(s: &str) -> &str {
+    let s = s.trim();
+    let bytes = s.as_bytes();
+    if s.len() >= 2
+        && ((bytes[0] == b'"' && bytes[s.len() - 1] == b'"')
+            || (bytes[0] == b'\'' && bytes[s.len() - 1] == b'\''))
+    {
+        &s[1..s.len() - 1]
+    } else {
+        s
+    }
 }
 
 /// Resolve a raw stale identifier from [`parse_prune_dry_run`] into an
@@ -743,6 +764,28 @@ Removing worktree: /second\n";
         let out = "Removing worktree: /home/user/my project\n";
         let result = parse_prune_dry_run(out);
         assert_eq!(result, vec!["/home/user/my project".to_owned()]);
+    }
+
+    #[test]
+    fn test_parse_prune_dry_run_single_quoted_path() {
+        let out = "Removing worktree: '/home/user/my project'\n";
+        let result = parse_prune_dry_run(out);
+        assert_eq!(result, vec!["/home/user/my project".to_owned()]);
+    }
+
+    #[test]
+    fn test_parse_prune_dry_run_double_quoted_path() {
+        let out = "Removing worktree: \"/home/user/my project\"\n";
+        let result = parse_prune_dry_run(out);
+        assert_eq!(result, vec!["/home/user/my project".to_owned()]);
+    }
+
+    #[test]
+    fn test_parse_prune_dry_run_mixed_quoted_and_plain() {
+        let out = "Removing worktree: '/a b c'\n\
+Removing worktree: /plain/path\n";
+        let result = parse_prune_dry_run(out);
+        assert_eq!(result, vec!["/a b c".to_owned(), "/plain/path".to_owned()]);
     }
 
     #[test]

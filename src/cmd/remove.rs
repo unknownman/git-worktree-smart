@@ -30,6 +30,23 @@ pub fn run(ctx: &Context, target: &str, force: bool) -> Result<(), AppError> {
         return Err(AppError::CannotRemoveMainWorktree { path: info.path });
     }
 
+    // Never allow removing the worktree you are currently standing in, even
+    // with --force: it breaks the shell, locks the directory on Windows, and
+    // triggers confusing Git errors.
+    let active = std::env::current_dir()
+        .ok()
+        .and_then(|cwd| std::fs::canonicalize(&cwd).ok())
+        .and_then(|cwd_canon| {
+            std::fs::canonicalize(&info.path)
+                .ok()
+                .map(|p| (cwd_canon, p))
+        })
+        .filter(|(cwd_canon, path_canon)| cwd_canon.starts_with(path_canon))
+        .is_some();
+    if active {
+        return Err(AppError::CannotRemoveActiveWorktree { path: info.path });
+    }
+
     if !force {
         if info.status.is_dirty {
             return Err(AppError::WorktreeIsDirty { path: info.path });

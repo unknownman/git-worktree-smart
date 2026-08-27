@@ -15,7 +15,7 @@ pub fn print_list(worktrees: &[WorktreeInfo], current_path: Option<&Path>) {
     let mut table = Table::new();
     table
         .load_preset(UTF8_FULL_CONDENSED)
-        .set_content_arrangement(ContentArrangement::DynamicFullWidth)
+        .set_content_arrangement(ContentArrangement::Dynamic)
         .set_header(["", "Branch", "Status", "Path", "Commit"]);
 
     for wt in worktrees {
@@ -41,7 +41,12 @@ pub fn print_list(worktrees: &[WorktreeInfo], current_path: Option<&Path>) {
 fn format_branch(wt: &WorktreeInfo) -> String {
     match &wt.branch {
         Some(b) => b.bold().cyan().to_string(),
-        None => "HEAD".dimmed().yellow().to_string(),
+        // Detached HEAD: show the short commit so multiple detached worktrees
+        // are easy to tell apart.
+        None => {
+            let short = &wt.head_hash[..wt.head_hash.len().min(7)];
+            format!("HEAD ({short})").dimmed().yellow().to_string()
+        }
     }
 }
 
@@ -79,10 +84,15 @@ fn format_path(wt: &WorktreeInfo) -> String {
 
 fn shorten_home(path: &Path) -> String {
     if let Some(home) = dirs::home_dir() {
+        // Windows may prefix absolute paths with the `\\?\` UNC wrapper; strip
+        // it so the `~/` shortening still matches cleanly.
+        let raw = path.to_string_lossy();
+        let raw = raw.strip_prefix(r"\\?\").unwrap_or(&raw);
+
         // Use `Path::strip_prefix` (component-aware) so a path like
         // `/home/developer/repo` is never mistaken for being under
         // `/home/dev`, which a naive string prefix would wrongly do.
-        if let Ok(rest) = path.strip_prefix(&home) {
+        if let Ok(rest) = Path::new(raw).strip_prefix(&home) {
             return format!("~/{}", rest.display());
         }
     }
