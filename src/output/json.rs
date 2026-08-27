@@ -30,3 +30,17 @@ pub fn print_single(worktree: &WorktreeInfo) -> Result<(), AppError> {
 
     Ok(())
 }
+
+pub fn print_prune(stale: &[String]) -> Result<(), AppError> {
+    let json = serde_json::to_string_pretty(stale).map_err(|e| AppError::GitError {
+        message: e.to_string(),
+    })?;
+
+    let stdout = std::io::stdout();
+    let mut handle = stdout.lock();
+    writeln!(handle, "{json}").map_err(|e| AppError::GitError {
+        message: e.to_string(),
+    })?;
+
+    Ok(())
+}

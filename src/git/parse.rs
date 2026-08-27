@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::error::AppError;
-use crate::git::command::run_git;
+use crate::git::command::{get_repo_root, run_git, run_git_stderr};
 use crate::models::{WorktreeInfo, WorktreeStatus};
 
 pub fn get_worktrees(verbose: bool) -> Result<Vec<WorktreeInfo>, AppError> {
@@ -163,6 +163,97 @@ pub fn infer_worktree_path(repo_root: &Path, branch_name: &str) -> Result<PathBu
         })?;
 
     Ok(parent.join(dir_name))
+}
+
+/// Parse the output of `git worktree prune --dry-run --verbose`.
+///
+/// Git emits one line per stale worktree reference. We support both observed
+/// formats:
+///   * an absolute worktree path (older git, "Removing worktree: /a/b")
+///   * a relative admin-dir entry (modern git, "Removing worktrees/<name>:
+///     <reason>", where the identifier is relative to the git dir)
+///
+/// Returns the raw identifiers. Callers may resolve relative admin entries to
+/// absolute worktree paths via [`resolve_stale_path`].
+pub fn parse_prune_dry_run(output: &str) -> Vec<String> {
+    output
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+
+            // Modern git: "Removing worktrees/<name>: <reason>" — keep the
+            // full relative identifier so it can be resolved later.
+            if let Some(rest) = trimmed.strip_prefix("Removing worktrees/") {
+                let name = rest.split(':').next().unwrap_or(rest).trim();
+                return (!name.is_empty()).then(|| format!("worktrees/{name}"));
+            }
+
+            // Older git: "Removing worktree: /abs/path"
+            if let Some(rest) = trimmed.strip_prefix("Removing worktree: ") {
+                let path = rest.split(':').next().unwrap_or(rest).trim();
+                return (!path.is_empty()).then(|| path.to_owned());
+            }
+
+            None
+        })
+        .collect()
+}
+
+/// Resolve a raw stale identifier from [`parse_prune_dry_run`] into an
+/// absolute worktree path.
+///
+/// Handles both absolute paths (returned as-is) and relative admin-dir entries
+/// of the form `worktrees/<name>`, resolved by reading the `gitdir` file that
+/// points back to the (now missing) worktree.
+pub fn resolve_stale_path(path: &str, repo_root: &Path) -> Result<PathBuf, AppError> {
+    let p = Path::new(path);
+
+    if p.is_absolute() {
+        return Ok(p.to_path_buf());
+    }
+
+    // Relative form: worktrees/<name>. The admin dir is <repo>/.git/worktrees/<name>.
+    // Its `gitdir` file holds the path to the linked worktree's `.git` file;
+    // the parent of that is the worktree root.
+    let admin_dir = repo_root.join(".git").join(p);
+    let gitdir_file = admin_dir.join("gitdir");
+
+    let contents = std::fs::read_to_string(&gitdir_file).map_err(|e| AppError::GitError {
+        message: format!("cannot resolve stale worktree `{path}`: {e}"),
+    })?;
+
+    let git_file = PathBuf::from(contents.trim());
+    let worktree_root = git_file
+        .parent()
+        .ok_or_else(|| AppError::GitError {
+            message: format!(
+                "cannot determine worktree root from `{}`",
+                git_file.display()
+            ),
+        })?
+        .to_path_buf();
+
+    Ok(worktree_root)
+}
+
+/// Runs `git worktree prune --dry-run --verbose` and parses the stale paths,
+/// resolving relative admin-dir entries to absolute worktree paths.
+pub fn get_stale_worktrees(verbose: bool) -> Result<Vec<String>, AppError> {
+    // `git worktree prune --dry-run --verbose` writes its listing to stderr.
+    let output = run_git_stderr(
+        &["worktree", "prune", "--dry-run", "--verbose"],
+        None,
+        verbose,
+    )?;
+    let raw = parse_prune_dry_run(&output);
+
+    let repo_root = get_repo_root(verbose)?;
+
+    raw.iter()
+        .map(|entry| {
+            resolve_stale_path(entry, &repo_root).map(|p| p.to_string_lossy().into_owned())
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -533,5 +624,105 @@ locked";
     fn test_infer_worktree_path_special_chars() {
         let path = infer_worktree_path(Path::new("/projects/web"), "fix/urgent-bug");
         assert_eq!(path.unwrap(), PathBuf::from("/projects/web-fix-urgent-bug"));
+    }
+
+    #[test]
+    fn test_parse_prune_dry_run_empty() {
+        assert!(parse_prune_dry_run("").is_empty());
+        assert!(parse_prune_dry_run("nothing here\n").is_empty());
+    }
+
+    #[test]
+    fn test_parse_prune_dry_run_single() {
+        let out = "Removing worktree: /home/dev/proj-stale\n";
+        let result = parse_prune_dry_run(out);
+        assert_eq!(result, vec!["/home/dev/proj-stale".to_owned()]);
+    }
+
+    #[test]
+    fn test_parse_prune_dry_run_multiple() {
+        let out = "Removing worktree: /a/b\n\
+Removing worktree: /c/d\n\
+Removing worktree: /e/f\n";
+        let result = parse_prune_dry_run(out);
+        assert_eq!(
+            result,
+            vec!["/a/b".to_owned(), "/c/d".to_owned(), "/e/f".to_owned()]
+        );
+    }
+
+    #[test]
+    fn test_parse_prune_dry_run_ignores_other_lines() {
+        let out = "Removing worktree: /only-path\n\
+Some other message: not a removal\n\
+Removing worktree: /second\n";
+        let result = parse_prune_dry_run(out);
+        assert_eq!(result, vec!["/only-path".to_owned(), "/second".to_owned()]);
+    }
+
+    #[test]
+    fn test_parse_prune_dry_run_paths_with_spaces() {
+        let out = "Removing worktree: /home/user/my project\n";
+        let result = parse_prune_dry_run(out);
+        assert_eq!(result, vec!["/home/user/my project".to_owned()]);
+    }
+
+    #[test]
+    fn test_parse_prune_dry_run_modern_relative_format() {
+        let out =
+            "Removing worktrees/test-rm-repo-stale2: gitdir file points to non-existent location\n";
+        let result = parse_prune_dry_run(out);
+        assert_eq!(result, vec!["worktrees/test-rm-repo-stale2".to_owned()]);
+    }
+
+    #[test]
+    fn test_parse_prune_dry_run_modern_relative_multiple() {
+        let out = "Removing worktrees/a: first reason\n\
+Removing worktrees/b: second reason\n";
+        let result = parse_prune_dry_run(out);
+        assert_eq!(
+            result,
+            vec!["worktrees/a".to_owned(), "worktrees/b".to_owned()]
+        );
+    }
+
+    #[test]
+    fn test_parse_prune_dry_run_mixed_formats() {
+        let out = "Removing worktree: /abs/path\n\
+Removing worktrees/rel: missing gitdir\n";
+        let result = parse_prune_dry_run(out);
+        assert_eq!(
+            result,
+            vec!["/abs/path".to_owned(), "worktrees/rel".to_owned()]
+        );
+    }
+
+    #[test]
+    fn test_resolve_stale_absolute_path() {
+        let path = resolve_stale_path("/abs/stale-dir", Path::new("/repo")).unwrap();
+        assert_eq!(path, PathBuf::from("/abs/stale-dir"));
+    }
+
+    #[test]
+    fn test_resolve_stale_relative_path_reads_gitdir() {
+        // Set up a fake admin dir with a gitdir file pointing to a fake .git.
+        let repo = "/tmp/resolve-test-repo";
+        std::fs::create_dir_all(format!("{repo}/.git/worktrees/feature-x")).unwrap();
+        std::fs::write(
+            format!("{repo}/.git/worktrees/feature-x/gitdir"),
+            "/tmp/resolve-test-repo-feature-x/.git",
+        )
+        .unwrap();
+
+        let path = resolve_stale_path("worktrees/feature-x", Path::new(repo)).unwrap();
+        assert_eq!(path, PathBuf::from("/tmp/resolve-test-repo-feature-x"));
+
+        std::fs::remove_dir_all("/tmp/resolve-test-repo").unwrap();
+    }
+
+    #[test]
+    fn test_resolve_stale_relative_missing_gitdir_errors() {
+        let result = resolve_stale_path("worktrees/missing", Path::new("/no/such/repo"));
+        assert!(result.is_err());
     }
 }

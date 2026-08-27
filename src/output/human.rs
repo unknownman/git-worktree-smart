@@ -147,3 +147,63 @@ pub fn print_switch_success(info: &WorktreeInfo) {
         .dimmed()
     );
 }
+
+pub fn print_remove_success(info: &WorktreeInfo, forced: bool) {
+    let branch = info.display_branch();
+
+    let suffix = if forced {
+        " (Forced)".red().bold().to_string()
+    } else {
+        String::new()
+    };
+
+    println!(
+        "{} {} {}",
+        "🗑️".red().bold(),
+        "Successfully removed worktree:".bold(),
+        format!("{branch}{suffix}").red(),
+    );
+}
+
+pub fn print_prune_dry_run(stale: &[String]) {
+    if stale.is_empty() {
+        println!("{} No stale worktrees to prune.", "✨".green());
+        return;
+    }
+
+    println!(
+        "{} The following stale worktrees would be removed:",
+        "⚠️".yellow().bold()
+    );
+    for path in stale {
+        println!(
+            "   - {}",
+            shorten_home(&std::path::PathBuf::from(path)).yellow()
+        );
+    }
+    println!();
+    println!(
+        "{} Dry run complete. Run with -y or --yes to actually prune these references.",
+        "→".yellow().bold()
+    );
+}
+
+pub fn print_prune_success(stale: &[String]) {
+    if stale.is_empty() {
+        println!("{} No stale worktrees to prune.", "✨".green());
+        return;
+    }
+
+    println!(
+        "{} {} {}",
+        "🧹".green().bold(),
+        "Pruned".bold(),
+        format!("{} stale worktree(s)", stale.len()).green(),
+    );
+    for path in stale {
+        println!(
+            "   - {}",
+            shorten_home(&std::path::PathBuf::from(path)).red()
+        );
+    }
+}

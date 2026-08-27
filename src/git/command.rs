@@ -24,6 +24,29 @@ pub fn run_git(args: &[&str], cwd: Option<&Path>, verbose: bool) -> Result<Strin
     Ok(status.stdout)
 }
 
+/// Like [`run_git`] but returns the captured `stderr` on success.
+///
+/// Some git subcommands (e.g. `worktree prune --dry-run --verbose`) write
+/// their human-readable output to stderr even on success.
+pub fn run_git_stderr(
+    args: &[&str],
+    cwd: Option<&Path>,
+    verbose: bool,
+) -> Result<String, AppError> {
+    let status = run_git_status(args, cwd, verbose)?;
+
+    if !status.success {
+        let message = if status.stderr.is_empty() {
+            format!("git {} failed (exit code unknown)", args.join(" "))
+        } else {
+            status.stderr
+        };
+        return Err(AppError::GitError { message });
+    }
+
+    Ok(status.stderr)
+}
+
 pub fn run_git_status(
     args: &[&str],
     cwd: Option<&Path>,

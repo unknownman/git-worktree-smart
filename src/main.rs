@@ -27,8 +27,10 @@ fn main() -> anyhow::Result<()> {
             cmd::add::run(&ctx, &name, base.as_deref(), track.as_deref()).map_err(Into::into)
         }
         Some(Commands::Switch { target }) => cmd::switch::run(&ctx, &target).map_err(Into::into),
-        Some(Commands::Remove { target, force }) => cmd::remove::run(&ctx, &target, force),
-        Some(Commands::Prune { yes }) => cmd::clean::run(&ctx, yes),
+        Some(Commands::Remove { target, force }) => {
+            cmd::remove::run(&ctx, &target, force).map_err(Into::into)
+        }
+        Some(Commands::Prune { yes }) => cmd::clean::run(&ctx, yes).map_err(Into::into),
         Some(Commands::Path { target }) => cmd::path::run(&ctx, &target).map_err(Into::into),
     }
 }

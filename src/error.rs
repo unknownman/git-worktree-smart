@@ -7,11 +7,17 @@ pub enum AppError {
     #[error("not a git repository (or any of the parent directories)")]
     NotAGitRepository,
 
-    #[error("worktree at `{path}` has uncommitted changes")]
+    #[error("worktree at `{path}` has uncommitted changes; refusing to remove (use --force to override)")]
     WorktreeIsDirty { path: PathBuf },
 
-    #[error("worktree at `{path}` has unpushed commits")]
-    WorktreeHasUnpushedCommits { path: PathBuf },
+    #[error("worktree at `{path}` has {ahead} unpushed commit(s); refusing to remove (use --force to override)")]
+    UnpushedCommits { path: PathBuf, ahead: u32 },
+
+    #[error("cannot remove the main worktree at `{path}`")]
+    CannotRemoveMainWorktree { path: PathBuf },
+
+    #[error("dry run complete — nothing was pruned")]
+    PruneDryRun,
 
     #[error("failed to execute git: {message}")]
     GitError { message: String },
