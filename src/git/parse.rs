@@ -78,8 +78,11 @@ fn derive_name(path: &Path, branch: Option<&str>) -> String {
 }
 
 fn get_head_message(hash: &str, verbose: bool) -> Result<String, AppError> {
-    let output = run_git(&["log", "-1", "--format=%s", hash], None, verbose)?;
-    Ok(output)
+    // The null hash means the repository has no commits yet (fresh `git init`).
+    if hash.is_empty() || hash.chars().all(|c| c == '0') {
+        return Ok("(no commits yet)".to_owned());
+    }
+    Ok(run_git(&["log", "-1", "--format=%s", hash], None, verbose)?)
 }
 
 pub fn get_worktree_status(cwd: &Path, verbose: bool) -> Result<WorktreeStatus, AppError> {

@@ -4,37 +4,39 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum AppError {
-    #[error("not a git repository (or any of the parent directories)")]
+    #[error("Not a git repository (or any of the parent directories). Run `git init` first.")]
     NotAGitRepository,
 
-    #[error("worktree at `{path}` has uncommitted changes; refusing to remove (use --force to override)")]
+    #[error("Worktree at `{path}` has uncommitted changes. 💡 Pass --force to delete it anyway.")]
     WorktreeIsDirty { path: PathBuf },
 
-    #[error("worktree at `{path}` has {ahead} unpushed commit(s); refusing to remove (use --force to override)")]
+    #[error(
+        "Worktree at `{path}` has {ahead} unpushed commit(s). 💡 Pass --force to delete it anyway."
+    )]
     UnpushedCommits { path: PathBuf, ahead: u32 },
 
-    #[error("cannot remove the main worktree at `{path}`")]
+    #[error("Cannot remove the main worktree at `{path}` — it is the root of the repository.")]
     CannotRemoveMainWorktree { path: PathBuf },
 
-    #[error("dry run complete — nothing was pruned")]
+    #[error("Dry run complete — nothing was pruned. Run with --yes to remove those references.")]
     PruneDryRun,
 
-    #[error("failed to execute git: {message}")]
+    #[error("Git failed: {message}")]
     GitError { message: String },
 
-    #[error("failed to resolve worktree path: {reason}")]
+    #[error("Failed to infer worktree path: {reason}")]
     PathInferenceFailed { reason: String },
 
-    #[error("worktree not found for query `{query}`")]
+    #[error("No worktree found for query `{query}`.")]
     WorktreeNotFound { query: String },
 
-    #[error("multiple worktrees match query `{query}`, please be more specific")]
+    #[error("Multiple worktrees match `{query}`. Please be more specific.")]
     MultipleWorktreesMatch { query: String },
 
-    #[error("branch `{branch}` already has a linked worktree")]
+    #[error("Branch `{branch}` already has a linked worktree.")]
     BranchAlreadyLinked { branch: String },
 
-    #[error("worktree already exists at `{path}`")]
+    #[error("A worktree already exists at `{path}`.")]
     WorktreeAlreadyExists { path: PathBuf },
 
     #[error(transparent)]
