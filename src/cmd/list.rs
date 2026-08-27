@@ -16,11 +16,15 @@ pub fn run(ctx: &Context) -> Result<(), AppError> {
         }
     });
 
-    let current_dir = std::env::current_dir().ok();
-    let current_path = current_dir.as_deref();
-
-    let current_idx =
-        current_path.and_then(|cwd| worktrees.iter().position(|wt| cwd.starts_with(&wt.path)));
+    // Determine the active worktree from Git's perspective. This is more
+    // reliable than comparing the cwd with `starts_with`, which breaks on
+    // symlinked filesystems (e.g. macOS `/tmp` -> `/private/tmp`).
+    let current_toplevel =
+        crate::git::command::run_git(&["rev-parse", "--show-toplevel"], None, false).ok();
+    let current_idx = current_toplevel.and_then(|toplevel| {
+        let toplevel_path = std::path::Path::new(&toplevel);
+        worktrees.iter().position(|wt| wt.path == toplevel_path)
+    });
 
     if ctx.json {
         output::json::print_list(&worktrees)?;

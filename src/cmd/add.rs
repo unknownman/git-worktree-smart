@@ -1,6 +1,6 @@
 use crate::error::AppError;
 use crate::git;
-use crate::git::command::{check_branch_exists, get_repo_root};
+use crate::git::command::{check_branch_exists, check_remote_branch_exists, get_repo_root};
 use crate::git::ops;
 use crate::git::parse::infer_worktree_path;
 use crate::models::WorktreeInfo;
@@ -21,6 +21,7 @@ pub fn run(
     }
 
     let branch_exists = check_branch_exists(name, ctx.verbose)?;
+    let remote_branch_exists = check_remote_branch_exists(name, ctx.verbose)?;
 
     if branch_exists && (base.is_some() || track.is_some()) {
         return Err(AppError::BranchAlreadyExistsIgnoringArgs {
@@ -28,7 +29,15 @@ pub fn run(
         });
     }
 
-    ops::add_worktree(ctx.verbose, &target_path, name, base, track, branch_exists)?;
+    ops::add_worktree(
+        ctx.verbose,
+        &target_path,
+        name,
+        base,
+        track,
+        branch_exists,
+        remote_branch_exists,
+    )?;
 
     let worktrees = git::get_worktrees(ctx.verbose)?;
     // Git canonicalizes paths (e.g. resolving /tmp -> /private/tmp on macOS),

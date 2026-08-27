@@ -94,7 +94,16 @@ fn get_head_message(hash: &str, verbose: bool) -> Result<String, AppError> {
     if hash.is_empty() || hash.chars().all(|c| c == '0') {
         return Ok("(no commits yet)".to_owned());
     }
-    Ok(run_git(&["log", "-1", "--format=%s", hash], None, verbose)?)
+    let raw = run_git(&["log", "-1", "--format=%s", hash], None, verbose)?;
+    // Sanitize whitespace so commit messages can never break table formatting.
+    let sanitized: String = raw
+        .chars()
+        .map(|c| match c {
+            '\n' | '\r' | '\t' => ' ',
+            other => other,
+        })
+        .collect();
+    Ok(sanitized.trim().to_owned())
 }
 
 pub fn get_worktree_status(cwd: &Path, verbose: bool) -> Result<WorktreeStatus, AppError> {

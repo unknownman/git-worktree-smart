@@ -18,8 +18,16 @@ pub enum AppError {
     #[error("Cannot remove the main worktree at `{path}` — it is the root of the repository.")]
     CannotRemoveMainWorktree { path: PathBuf },
 
+    #[error(
+        "Worktree directory at `{path}` is missing. Use `wt prune` to clean up stale references."
+    )]
+    StaleWorktree { path: PathBuf },
+
     #[error("Git failed: {message}")]
     GitError { message: String },
+
+    #[error("JSON serialization failed: {message}")]
+    JsonError { message: String },
 
     #[error("Failed to infer worktree path: {reason}")]
     PathInferenceFailed { reason: String },
@@ -29,9 +37,6 @@ pub enum AppError {
 
     #[error("Multiple worktrees match `{query}`. Please be more specific.")]
     MultipleWorktreesMatch { query: String },
-
-    #[error("Branch `{branch}` already has a linked worktree.")]
-    BranchAlreadyLinked { branch: String },
 
     #[error("The branch `{branch}` already exists, so --base and --track were ignored.")]
     BranchAlreadyExistsIgnoringArgs { branch: String },

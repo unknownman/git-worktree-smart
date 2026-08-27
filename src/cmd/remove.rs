@@ -6,6 +6,12 @@ use crate::Context;
 pub fn run(ctx: &Context, target: &str, force: bool) -> Result<(), AppError> {
     let info = git::resolve_worktree(ctx, target)?;
 
+    // A manually-deleted worktree directory cannot be removed by `git worktree
+    // remove`; point the user at `wt prune` to clean up the stale reference.
+    if !info.path.exists() {
+        return Err(AppError::StaleWorktree { path: info.path });
+    }
+
     // The main repository has a `.git` directory; linked worktrees have a
     // `.git` file. This is reliable even when run from inside a sub-worktree.
     let is_main_worktree = info.path.join(".git").is_dir();

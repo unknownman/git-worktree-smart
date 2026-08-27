@@ -10,11 +10,22 @@ pub fn add_worktree(
     base: Option<&str>,
     track: Option<&str>,
     branch_exists: bool,
+    remote_branch_exists: bool,
 ) -> Result<(), AppError> {
     let mut args = vec!["worktree", "add"];
 
     if branch_exists {
-        // Check out an existing branch: `git worktree add <path> <name>`.
+        // Check out an existing local branch: `git worktree add <path> <name>`.
+        args.push(path_str(path)?);
+        args.push(branch_name);
+        run_git(&args, None, verbose)?;
+        return Ok(());
+    }
+
+    // If the branch exists only on a remote, omit `-b` and let Git's default
+    // retry-with-track (DWIM) behavior wire up the remote tracking
+    // automatically: `git worktree add <path> <name>`.
+    if remote_branch_exists && track.is_none() && base.is_none() {
         args.push(path_str(path)?);
         args.push(branch_name);
         run_git(&args, None, verbose)?;

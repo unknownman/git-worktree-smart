@@ -121,3 +121,14 @@ pub fn check_branch_exists(branch_name: &str, verbose: bool) -> Result<bool, App
     )?;
     Ok(status.success)
 }
+
+/// Returns `true` if a branch of the given name exists on any configured
+/// remote (e.g. `origin/branch_name`).
+pub fn check_remote_branch_exists(branch_name: &str, verbose: bool) -> Result<bool, AppError> {
+    let output = run_git(
+        &["branch", "--list", "--remote", &format!("*/{branch_name}")],
+        None,
+        verbose,
+    )?;
+    Ok(!output.is_empty())
+}
