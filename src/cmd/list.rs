@@ -6,9 +6,16 @@ use crate::Context;
 pub fn run(ctx: &Context) -> Result<(), AppError> {
     let mut worktrees = git::get_worktrees(ctx.verbose)?;
 
+    // Resolve the main repo root once; the "main" worktree is pinned to the top.
+    let repo_root = git::get_repo_root(ctx.verbose).ok();
+
     worktrees.sort_by(|a, b| {
-        let a_is_main = a.path.join(".git").is_dir();
-        let b_is_main = b.path.join(".git").is_dir();
+        let a_is_main = repo_root
+            .as_ref()
+            .is_some_and(|root| a.path.canonicalize().ok() == root.canonicalize().ok());
+        let b_is_main = repo_root
+            .as_ref()
+            .is_some_and(|root| b.path.canonicalize().ok() == root.canonicalize().ok());
         match (a_is_main, b_is_main) {
             (true, false) => std::cmp::Ordering::Less,
             (false, true) => std::cmp::Ordering::Greater,

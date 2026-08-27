@@ -1,6 +1,5 @@
 use std::process::Command;
 
-use assert_cmd::prelude::*;
 use predicates::prelude::*;
 
 fn wt() -> assert_cmd::Command {
@@ -107,8 +106,7 @@ fn add_creates_worktree_and_list_round_trips() {
         .arg("feature/login")
         .assert()
         .success()
-        .stdout(predicate::str::is_empty())
-        .stderr(predicate::str::contains("feature/login"));
+        .stdout(predicate::str::contains("feature/login"));
 
     // The worktree should now appear in the list.
     let mut list = wt();

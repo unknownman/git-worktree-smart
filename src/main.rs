@@ -58,6 +58,6 @@ fn render_error(ctx: &Context, err: &AppError) {
                 .unwrap_or_else(|_| r#"{"error":"unknown"}"#.to_owned())
         );
     } else {
-        eprintln!("{} {}", "Error:".bold().red(), err.to_string());
+        eprintln!("{} {}", "Error:".bold().red(), err);
     }
 }

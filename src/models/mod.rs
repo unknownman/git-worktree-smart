@@ -37,6 +37,7 @@ impl WorktreeStatus {
         }
     }
 
+    #[allow(dead_code)]
     pub fn is_clean(&self) -> bool {
         !self.is_dirty && !self.is_stale && self.ahead == 0 && self.behind == 0
     }

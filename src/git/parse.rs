@@ -11,33 +11,42 @@ pub fn get_worktrees(verbose: bool) -> Result<Vec<WorktreeInfo>, AppError> {
 
     // Fetch the head message and status for every worktree concurrently. Each
     // spawns several git subprocesses, so parallelizing avoids a long serial
-    // stall. Threads report per-worktree errors so a single failure bubbles up
-    // to the caller instead of silently marking a dirty worktree as clean.
-    let scope_result: Result<(), AppError> = std::thread::scope(|scope| {
+    // stall. Failures for an individual worktree (corrupted index, permission
+    // errors, missing dir) are caught and surfaced as stale/unreadable rather
+    // than crashing the whole `wt list` — healthy worktrees still display.
+    std::thread::scope(|scope| {
         let handles: Vec<_> = worktrees
             .iter_mut()
             .map(|wt| {
                 scope.spawn(move || {
-                    let head_msg = get_head_message(&wt.head_hash, verbose)?;
-                    let status = get_worktree_status(&wt.path, verbose)?;
+                    let head_ok = get_head_message(&wt.head_hash, &wt.path, verbose);
+                    let status_ok = get_worktree_status(&wt.path, verbose);
 
-                    wt.head_msg = head_msg;
-                    wt.status = status;
-                    Ok::<(), AppError>(())
+                    match (head_ok, status_ok) {
+                        (Ok(msg), Ok(status)) => {
+                            wt.head_msg = msg;
+                            wt.status = status;
+                        }
+                        (_, Ok(status)) => {
+                            // Head message unreadable but status was read.
+                            wt.head_msg = "(unreadable)".to_owned();
+                            wt.status = status;
+                        }
+                        (_, _) => {
+                            // Mark as unreadable so the UI can flag it instead
+                            // of silently reporting a "clean" worktree.
+                            wt.head_msg = "(unreadable)".to_owned();
+                            wt.status.is_stale = true;
+                        }
+                    }
                 })
             })
             .collect();
 
         for handle in handles {
-            let thread_result = handle.join().map_err(|_| AppError::GitError {
-                message: "worktree status thread panicked".to_owned(),
-            })?;
-            thread_result?;
+            let _ = handle.join();
         }
-        Ok(())
     });
-
-    scope_result?;
 
     Ok(worktrees)
 }
@@ -99,12 +108,13 @@ fn derive_name(path: &Path, branch: Option<&str>) -> String {
         .to_owned()
 }
 
-fn get_head_message(hash: &str, verbose: bool) -> Result<String, AppError> {
+fn get_head_message(hash: &str, cwd: &Path, verbose: bool) -> Result<String, AppError> {
     // The null hash means the repository has no commits yet (fresh `git init`).
     if hash.is_empty() || hash.chars().all(|c| c == '0') {
         return Ok("(no commits yet)".to_owned());
     }
-    let raw = run_git(&["log", "-1", "--format=%s", hash], None, verbose)?;
+    // Look the commit up within the worktree's own repository context.
+    let raw = run_git(&["log", "-1", "--format=%s", hash], Some(cwd), verbose)?;
     // Sanitize whitespace so commit messages can never break table formatting.
     let sanitized: String = raw
         .chars()
@@ -157,7 +167,9 @@ pub fn parse_rev_list_count(output: &str) -> (u32, u32) {
 }
 
 fn check_dirty(cwd: &Path, verbose: bool) -> Result<bool, AppError> {
-    let output = run_git(&["status", "--porcelain"], Some(cwd), verbose)?;
+    // `-uall` also reports untracked files inside nested untracked directories,
+    // so we never miss uncommitted content.
+    let output = run_git(&["status", "--porcelain", "-uall"], Some(cwd), verbose)?;
     Ok(parse_dirty(&output))
 }
 

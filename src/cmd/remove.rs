@@ -12,9 +12,20 @@ pub fn run(ctx: &Context, target: &str, force: bool) -> Result<(), AppError> {
         return Err(AppError::StaleWorktree { path: info.path });
     }
 
-    // The main repository has a `.git` directory; linked worktrees have a
-    // `.git` file. This is reliable even when run from inside a sub-worktree.
-    let is_main_worktree = info.path.join(".git").is_dir();
+    // Compare canonicalized paths against the true main repo root. This is
+    // robust across symlinked filesystems and non-standard setups (e.g.
+    // submodules or worktree index anomalies), unlike probing for a `.git`
+    // directory.
+    let repo_root = git::get_repo_root(ctx.verbose)?;
+    let is_main_worktree = match (
+        std::fs::canonicalize(&info.path),
+        std::fs::canonicalize(&repo_root),
+    ) {
+        (Ok(info_canon), Ok(root_canon)) => info_canon == root_canon,
+        // If either path cannot be canonicalized, fall back to a direct
+        // comparison to avoid a false negative.
+        _ => info.path == repo_root,
+    };
     if is_main_worktree {
         return Err(AppError::CannotRemoveMainWorktree { path: info.path });
     }

@@ -19,7 +19,7 @@ pub fn print_list(worktrees: &[WorktreeInfo], current_path: Option<&Path>) {
         .set_header(["", "Branch", "Status", "Path", "Commit"]);
 
     for wt in worktrees {
-        let is_current = current_path.map_or(false, |p| p == wt.path);
+        let is_current = current_path.is_some_and(|p| p == wt.path);
 
         let indicator = if is_current {
             "*".bold().cyan().to_string()
@@ -27,10 +27,10 @@ pub fn print_list(worktrees: &[WorktreeInfo], current_path: Option<&Path>) {
             String::new()
         };
 
-        let branch = format_branch(&wt);
-        let status = format_status(&wt);
-        let path = format_path(&wt);
-        let commit = format_commit(&wt);
+        let branch = format_branch(wt);
+        let status = format_status(wt);
+        let path = format_path(wt);
+        let commit = format_commit(wt);
 
         table.add_row([indicator, branch, status, path, commit]);
     }
@@ -109,7 +109,7 @@ pub fn print_add_success(info: &WorktreeInfo) {
     let branch = info.display_branch();
     let path = shorten_home(&info.path);
 
-    eprintln!(
+    println!(
         "{} {} for {} at {}",
         "✓".green().bold(),
         "Created worktree".bold(),
@@ -121,33 +121,34 @@ pub fn print_add_success(info: &WorktreeInfo) {
 pub fn print_switch_success(info: &WorktreeInfo) {
     let path = shorten_home(&info.path);
 
-    eprintln!(
+    println!(
         "{} {} {}",
         "→".cyan().bold(),
         "Target resolved:".bold(),
         path.cyan(),
     );
-    eprintln!(
+    println!(
         "{} {}",
         "💡".dimmed(),
         "A child process cannot change your shell's directory.".dimmed(),
     );
-    eprintln!(
+    println!(
         "{} {}",
         "To switch instantly, use:".dimmed(),
         "cd $(wt path <query>)".yellow().bold(),
     );
-    eprintln!();
-    eprintln!(
+    println!();
+    println!(
         "{}",
         "Pro-tip: Add this to your ~/.zshrc or ~/.bashrc:".dimmed()
     );
-    eprintln!(
+    println!(
         "  {}",
         r#"wt() {
     if [ "$1" = "switch" ] || [ "$1" = "cd" ]; then
+        shift
         local target_path
-        target_path="$(command wt path "${@:2}")"
+        target_path="$(command wt path "$@")"
         if [ $? -eq 0 ] && [ -n "$target_path" ]; then
             cd "$target_path"
         fi
@@ -168,7 +169,7 @@ pub fn print_remove_success(info: &WorktreeInfo, forced: bool) {
         String::new()
     };
 
-    eprintln!(
+    println!(
         "{} {} {}",
         "🗑️".red().bold(),
         "Successfully removed worktree:".bold(),
@@ -178,22 +179,22 @@ pub fn print_remove_success(info: &WorktreeInfo, forced: bool) {
 
 pub fn print_prune_dry_run(stale: &[String]) {
     if stale.is_empty() {
-        eprintln!("{} No stale worktrees to prune.", "✨".green());
+        println!("{} No stale worktrees to prune.", "✨".green());
         return;
     }
 
-    eprintln!(
+    println!(
         "{} The following stale worktrees would be removed:",
         "⚠️".yellow().bold()
     );
     for path in stale {
-        eprintln!(
+        println!(
             "   - {}",
             shorten_home(&std::path::PathBuf::from(path)).yellow()
         );
     }
-    eprintln!();
-    eprintln!(
+    println!();
+    println!(
         "{} Dry run complete. Run with -y or --yes to actually prune these references.",
         "→".yellow().bold()
     );
@@ -201,18 +202,18 @@ pub fn print_prune_dry_run(stale: &[String]) {
 
 pub fn print_prune_success(stale: &[String]) {
     if stale.is_empty() {
-        eprintln!("{} No stale worktrees to prune.", "✨".green());
+        println!("{} No stale worktrees to prune.", "✨".green());
         return;
     }
 
-    eprintln!(
+    println!(
         "{} {} {}",
         "🧹".green().bold(),
         "Pruned".bold(),
         format!("{} stale worktree(s)", stale.len()).green(),
     );
     for path in stale {
-        eprintln!(
+        println!(
             "   - {}",
             shorten_home(&std::path::PathBuf::from(path)).red()
         );
