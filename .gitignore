@@ -1,1 +1,7 @@
 /target
+
+# Unrelated cli-skill project files (kept out of this repository)
+/cli-skill/
+/scripts/
+/.opencode/
+/.cli-skill-install-state.json
