@@ -72,15 +72,15 @@ pub enum Commands {
     /// Resolve a target worktree and print the path to switch to.
     ///
     /// Matches worktrees via exact, substring, or fuzzy matching. Because a
-    /// child process cannot change the parent shell's directory, this prints a
-    /// shell snippet you can evaluate: `cd $(wt switch feature/auth)` or simply
-    /// `cd $(wt path feature/auth)`.
+    /// child process cannot change the parent shell's directory, pair this with
+    /// the path command instead: `cd $(wt path feature/auth)`.
     #[command(
         alias = "cd",
         after_help = "EXAMPLES:\n\
             wt switch login           # fuzzy-match 'feature/login'\n\
             wt switch feature/login   # exact branch match\n\
-            wt cd main                # alias for 'switch'"
+            wt cd main                # alias for 'switch'\n\
+            cd $(wt path login)       # actually switch your shell's directory"
     )]
     Switch {
         /// Branch name, path, or substring to match against.

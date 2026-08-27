@@ -79,8 +79,33 @@ pub fn run_git_status(
 }
 
 pub fn get_repo_root(verbose: bool) -> Result<PathBuf, AppError> {
-    let output = run_git(&["rev-parse", "--show-toplevel"], None, verbose)?;
-    Ok(PathBuf::from(output))
+    // `--git-common-dir` always points at the main repository's `.git`, even
+    // when invoked from inside a linked worktree. We use it to derive the true
+    // main repo root instead of `--show-toplevel`, which would return the
+    // current worktree's root and cause incorrect sibling path inference.
+    let output = run_git(&["rev-parse", "--git-common-dir"], None, verbose)?;
+
+    let mut git_dir = PathBuf::from(output);
+
+    // The common dir may be reported relative (e.g. `.git` from the main root);
+    // convert to an absolute path before canonicalizing.
+    if !git_dir.is_absolute() {
+        let cwd = std::env::current_dir().map_err(AppError::Io)?;
+        git_dir = cwd.join(git_dir);
+    }
+
+    let git_dir = std::fs::canonicalize(&git_dir).map_err(AppError::Io)?;
+
+    // The main repository root is the parent of its `.git` directory.
+    git_dir
+        .parent()
+        .map(Path::to_path_buf)
+        .ok_or_else(|| AppError::GitError {
+            message: format!(
+                "cannot determine repository root from `{}`",
+                git_dir.display()
+            ),
+        })
 }
 
 pub fn check_branch_exists(branch_name: &str, verbose: bool) -> Result<bool, AppError> {

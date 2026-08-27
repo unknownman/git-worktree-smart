@@ -102,7 +102,7 @@ pub fn print_add_success(info: &WorktreeInfo) {
     let branch = info.display_branch();
     let path = shorten_home(&info.path);
 
-    println!(
+    eprintln!(
         "{} {} for {} at {}",
         "✓".green().bold(),
         "Created worktree".bold(),
@@ -114,28 +114,28 @@ pub fn print_add_success(info: &WorktreeInfo) {
 pub fn print_switch_success(info: &WorktreeInfo) {
     let path = shorten_home(&info.path);
 
-    println!(
+    eprintln!(
         "{} {} {}",
         "→".cyan().bold(),
         "Target resolved:".bold(),
         path.cyan(),
     );
-    println!(
+    eprintln!(
         "{} {}",
         "💡".dimmed(),
         "A child process cannot change your shell's directory.".dimmed(),
     );
-    println!(
+    eprintln!(
         "{} {}",
         "To switch instantly, use:".dimmed(),
         "cd $(wt path <query>)".yellow().bold(),
     );
-    println!();
-    println!(
+    eprintln!();
+    eprintln!(
         "{}",
         "Pro-tip: Add this to your ~/.zshrc or ~/.bashrc:".dimmed()
     );
-    println!(
+    eprintln!(
         "  {}",
         r#"wt() {
     if [ "$1" = "switch" ]; then
@@ -157,7 +157,7 @@ pub fn print_remove_success(info: &WorktreeInfo, forced: bool) {
         String::new()
     };
 
-    println!(
+    eprintln!(
         "{} {} {}",
         "🗑️".red().bold(),
         "Successfully removed worktree:".bold(),
@@ -167,22 +167,22 @@ pub fn print_remove_success(info: &WorktreeInfo, forced: bool) {
 
 pub fn print_prune_dry_run(stale: &[String]) {
     if stale.is_empty() {
-        println!("{} No stale worktrees to prune.", "✨".green());
+        eprintln!("{} No stale worktrees to prune.", "✨".green());
         return;
     }
 
-    println!(
+    eprintln!(
         "{} The following stale worktrees would be removed:",
         "⚠️".yellow().bold()
     );
     for path in stale {
-        println!(
+        eprintln!(
             "   - {}",
             shorten_home(&std::path::PathBuf::from(path)).yellow()
         );
     }
-    println!();
-    println!(
+    eprintln!();
+    eprintln!(
         "{} Dry run complete. Run with -y or --yes to actually prune these references.",
         "→".yellow().bold()
     );
@@ -190,18 +190,18 @@ pub fn print_prune_dry_run(stale: &[String]) {
 
 pub fn print_prune_success(stale: &[String]) {
     if stale.is_empty() {
-        println!("{} No stale worktrees to prune.", "✨".green());
+        eprintln!("{} No stale worktrees to prune.", "✨".green());
         return;
     }
 
-    println!(
+    eprintln!(
         "{} {} {}",
         "🧹".green().bold(),
         "Pruned".bold(),
         format!("{} stale worktree(s)", stale.len()).green(),
     );
     for path in stale {
-        println!(
+        eprintln!(
             "   - {}",
             shorten_home(&std::path::PathBuf::from(path)).red()
         );

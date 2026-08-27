@@ -15,7 +15,7 @@ pub fn get_worktrees(verbose: bool) -> Result<Vec<WorktreeInfo>, AppError> {
     // (e.g. a missing dir) does not crash the whole command.
     std::thread::scope(|scope| {
         for wt in &mut worktrees {
-            scope.spawn(|| {
+            scope.spawn(move || {
                 let head_msg = get_head_message(&wt.head_hash, verbose).ok();
                 let status = get_worktree_status(&wt.path, verbose).ok();
 
