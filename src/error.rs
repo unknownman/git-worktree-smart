@@ -33,6 +33,9 @@ pub enum AppError {
     #[error("Branch `{branch}` already has a linked worktree.")]
     BranchAlreadyLinked { branch: String },
 
+    #[error("The branch `{branch}` already exists, so --base and --track were ignored.")]
+    BranchAlreadyExistsIgnoringArgs { branch: String },
+
     #[error("A worktree already exists at `{path}`.")]
     WorktreeAlreadyExists { path: PathBuf },
 

@@ -9,13 +9,25 @@ pub fn get_worktrees(verbose: bool) -> Result<Vec<WorktreeInfo>, AppError> {
     let output = run_git(&["worktree", "list", "--porcelain"], None, verbose)?;
     let mut worktrees = parse_worktree_list(&output);
 
-    for wt in &mut worktrees {
-        let msg = get_head_message(&wt.head_hash, verbose)?;
-        wt.head_msg = msg;
+    // Fetch the head message and status for every worktree concurrently. Each
+    // spawns several git subprocesses, so parallelizing avoids a long serial
+    // stall. Thread-level errors are captured per-worktree so a single failure
+    // (e.g. a missing dir) does not crash the whole command.
+    std::thread::scope(|scope| {
+        for wt in &mut worktrees {
+            scope.spawn(|| {
+                let head_msg = get_head_message(&wt.head_hash, verbose).ok();
+                let status = get_worktree_status(&wt.path, verbose).ok();
 
-        let status = get_worktree_status(&wt.path, verbose)?;
-        wt.status = status;
-    }
+                if let Some(msg) = head_msg {
+                    wt.head_msg = msg;
+                }
+                if let Some(st) = status {
+                    wt.status = st;
+                }
+            });
+        }
+    });
 
     Ok(worktrees)
 }
@@ -227,9 +239,17 @@ pub fn resolve_stale_path(path: &str, repo_root: &Path) -> Result<PathBuf, AppEr
     let admin_dir = repo_root.join(".git").join(p);
     let gitdir_file = admin_dir.join("gitdir");
 
-    let contents = std::fs::read_to_string(&gitdir_file).map_err(|e| AppError::GitError {
-        message: format!("cannot resolve stale worktree `{path}`: {e}"),
-    })?;
+    // If the `gitdir` file cannot be read, gracefully fall back to the admin
+    // dir itself (or the repo-root-joined path) rather than failing the whole
+    // `prune` command. The fallback path is only used for display purposes.
+    let Ok(contents) = std::fs::read_to_string(&gitdir_file) else {
+        let fallback = if admin_dir.exists() {
+            admin_dir
+        } else {
+            repo_root.join(path)
+        };
+        return Ok(fallback);
+    };
 
     let git_file = PathBuf::from(contents.trim());
     let worktree_root = git_file
@@ -730,8 +750,10 @@ Removing worktrees/rel: missing gitdir\n";
     }
 
     #[test]
-    fn test_resolve_stale_relative_missing_gitdir_errors() {
-        let result = resolve_stale_path("worktrees/missing", Path::new("/no/such/repo"));
-        assert!(result.is_err());
+    fn test_resolve_stale_relative_missing_gitdir_falls_back() {
+        // A missing gitdir file should not error; it falls back to a displayable
+        // path so `prune` can still print the entry and succeed.
+        let result = resolve_stale_path("worktrees/missing", Path::new("/no/such/repo")).unwrap();
+        assert_eq!(result, PathBuf::from("/no/such/repo/worktrees/missing"));
     }
 }
