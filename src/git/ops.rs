@@ -21,18 +21,21 @@ pub fn add_worktree(
         return Ok(());
     }
 
-    // Create a new branch from an optional base, with optional upstream tracking.
+    // Create a new branch from an optional upstream or base.
     if let Some(upstream) = track {
-        args.extend_from_slice(&["--track", upstream]);
-    }
-
-    if let Some(start) = base {
-        args.extend_from_slice(&["-b", branch_name, start]);
+        // syntax: git worktree add --track -b <branch> <path> <upstream>
+        args.push("--track");
+        args.extend_from_slice(&["-b", branch_name]);
+        args.push(path_str(path)?);
+        args.push(upstream);
+    } else if let Some(start) = base {
+        args.extend_from_slice(&["-b", branch_name]);
+        args.push(path_str(path)?);
+        args.push(start);
     } else {
         args.extend_from_slice(&["-b", branch_name]);
+        args.push(path_str(path)?);
     }
-
-    args.push(path_str(path)?);
 
     run_git(&args, None, verbose)?;
     Ok(())

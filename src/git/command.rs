@@ -13,6 +13,9 @@ pub fn run_git(args: &[&str], cwd: Option<&Path>, verbose: bool) -> Result<Strin
     let status = run_git_status(args, cwd, verbose)?;
 
     if !status.success {
+        if status.stderr.contains("not a git repository") {
+            return Err(AppError::NotAGitRepository);
+        }
         let message = if status.stderr.is_empty() {
             format!("git {} failed (exit code unknown)", args.join(" "))
         } else {
@@ -36,6 +39,9 @@ pub fn run_git_stderr(
     let status = run_git_status(args, cwd, verbose)?;
 
     if !status.success {
+        if status.stderr.contains("not a git repository") {
+            return Err(AppError::NotAGitRepository);
+        }
         let message = if status.stderr.is_empty() {
             format!("git {} failed (exit code unknown)", args.join(" "))
         } else {

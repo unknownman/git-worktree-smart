@@ -1,14 +1,15 @@
 use crate::error::AppError;
 use crate::git;
-use crate::git::command::get_repo_root;
 use crate::output;
 use crate::Context;
 
 pub fn run(ctx: &Context, target: &str, force: bool) -> Result<(), AppError> {
     let info = git::resolve_worktree(ctx, target)?;
 
-    let repo_root = get_repo_root(ctx.verbose)?;
-    if info.path == repo_root {
+    // The main repository has a `.git` directory; linked worktrees have a
+    // `.git` file. This is reliable even when run from inside a sub-worktree.
+    let is_main_worktree = info.path.join(".git").is_dir();
+    if is_main_worktree {
         return Err(AppError::CannotRemoveMainWorktree { path: info.path });
     }
 

@@ -6,7 +6,15 @@ use crate::Context;
 pub fn run(ctx: &Context) -> Result<(), AppError> {
     let mut worktrees = git::get_worktrees(ctx.verbose)?;
 
-    worktrees.sort_by(|a, b| a.name.cmp(&b.name));
+    worktrees.sort_by(|a, b| {
+        let a_is_main = a.path.join(".git").is_dir();
+        let b_is_main = b.path.join(".git").is_dir();
+        match (a_is_main, b_is_main) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => a.name.cmp(&b.name),
+        }
+    });
 
     let current_dir = std::env::current_dir().ok();
     let current_path = current_dir.as_deref();

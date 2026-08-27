@@ -65,7 +65,7 @@ pub enum Commands {
         /// Set up tracking for a remote branch (e.g., origin/feature/auth).
         ///
         /// The branch must already exist on the remote.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "base")]
         track: Option<String>,
     },
 
