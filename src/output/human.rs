@@ -47,6 +47,13 @@ fn format_branch(wt: &WorktreeInfo) -> String {
 
 fn format_status(wt: &WorktreeInfo) -> String {
     let s = &wt.status;
+
+    // A stale worktree has no usable directory, so ahead/behind/clean all
+    // become moot — surface the broken state unambiguously.
+    if s.is_stale {
+        return "stale".red().bold().to_string();
+    }
+
     let mut parts = Vec::new();
 
     if s.is_dirty {
@@ -71,16 +78,16 @@ fn format_path(wt: &WorktreeInfo) -> String {
 }
 
 fn shorten_home(path: &Path) -> String {
-    let s = path.to_string_lossy();
-
     if let Some(home) = dirs::home_dir() {
-        let home_str = home.to_string_lossy();
-        if let Some(rest) = s.strip_prefix(home_str.as_ref()) {
-            return format!("~{rest}");
+        // Use `Path::strip_prefix` (component-aware) so a path like
+        // `/home/developer/repo` is never mistaken for being under
+        // `/home/dev`, which a naive string prefix would wrongly do.
+        if let Ok(rest) = path.strip_prefix(&home) {
+            return format!("~/{}", rest.display());
         }
     }
 
-    s.into_owned()
+    path.to_string_lossy().into_owned()
 }
 
 fn format_commit(wt: &WorktreeInfo) -> String {

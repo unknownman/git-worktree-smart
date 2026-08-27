@@ -14,6 +14,20 @@ pub fn resolve_worktree(ctx: &Context, query: &str) -> Result<WorktreeInfo, AppE
         });
     }
 
+    // 0. Path resolution: if the query can be canonicalized to an absolute
+    // path (e.g. `.`, `..`, or a relative dir), match it against the
+    // canonicalized worktree paths so `wt path .` or `wt rm .` resolve to the
+    // worktree you are currently standing in.
+    if let Ok(query_canon) = std::fs::canonicalize(query) {
+        for wt in &worktrees {
+            if let Ok(wt_canon) = std::fs::canonicalize(&wt.path) {
+                if wt_canon == query_canon {
+                    return Ok(wt.clone());
+                }
+            }
+        }
+    }
+
     // 1. Exact match
     for wt in &worktrees {
         if wt.name == query

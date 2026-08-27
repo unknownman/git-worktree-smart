@@ -22,6 +22,7 @@ impl WorktreeInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorktreeStatus {
     pub is_dirty: bool,
+    pub is_stale: bool,
     pub ahead: u32,
     pub behind: u32,
 }
@@ -30,18 +31,22 @@ impl WorktreeStatus {
     pub fn clean() -> Self {
         Self {
             is_dirty: false,
+            is_stale: false,
             ahead: 0,
             behind: 0,
         }
     }
 
     pub fn is_clean(&self) -> bool {
-        !self.is_dirty && self.ahead == 0 && self.behind == 0
+        !self.is_dirty && !self.is_stale && self.ahead == 0 && self.behind == 0
     }
 }
 
 impl fmt::Display for WorktreeStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.is_stale {
+            return write!(f, "stale");
+        }
         match (self.is_dirty, self.ahead, self.behind) {
             (false, 0, 0) => write!(f, "clean"),
             (true, 0, 0) => write!(f, "dirty"),

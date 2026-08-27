@@ -17,7 +17,7 @@ pub fn run(
     let target_path = infer_worktree_path(&repo_root, name)?;
 
     if target_path.exists() {
-        return Err(AppError::WorktreeAlreadyExists { path: target_path });
+        return Err(AppError::PathAlreadyExists { path: target_path });
     }
 
     let branch_exists = check_branch_exists(name, ctx.verbose)?;

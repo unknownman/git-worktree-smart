@@ -118,9 +118,15 @@ fn get_head_message(hash: &str, verbose: bool) -> Result<String, AppError> {
 
 pub fn get_worktree_status(cwd: &Path, verbose: bool) -> Result<WorktreeStatus, AppError> {
     // If the worktree's directory no longer exists (stale), there is nothing
-    // to inspect — report a clean status rather than failing the whole call.
+    // to inspect — surface it as stale so the UI can flag the broken state
+    // instead of pretending everything is clean.
     if !cwd.is_dir() {
-        return Ok(WorktreeStatus::clean());
+        return Ok(WorktreeStatus {
+            is_dirty: false,
+            is_stale: true,
+            ahead: 0,
+            behind: 0,
+        });
     }
 
     let is_dirty = check_dirty(cwd, verbose)?;
@@ -128,6 +134,7 @@ pub fn get_worktree_status(cwd: &Path, verbose: bool) -> Result<WorktreeStatus, 
 
     Ok(WorktreeStatus {
         is_dirty,
+        is_stale: false,
         ahead,
         behind,
     })
@@ -509,6 +516,7 @@ locked";
         assert_eq!(
             WorktreeStatus {
                 is_dirty: true,
+                is_stale: false,
                 ahead: 0,
                 behind: 0
             }
@@ -519,6 +527,7 @@ locked";
         assert_eq!(
             WorktreeStatus {
                 is_dirty: false,
+                is_stale: false,
                 ahead: 3,
                 behind: 0
             }
@@ -529,6 +538,7 @@ locked";
         assert_eq!(
             WorktreeStatus {
                 is_dirty: false,
+                is_stale: false,
                 ahead: 0,
                 behind: 2
             }
@@ -539,6 +549,7 @@ locked";
         assert_eq!(
             WorktreeStatus {
                 is_dirty: false,
+                is_stale: false,
                 ahead: 1,
                 behind: 4
             }
@@ -549,6 +560,7 @@ locked";
         assert_eq!(
             WorktreeStatus {
                 is_dirty: true,
+                is_stale: false,
                 ahead: 2,
                 behind: 0
             }
@@ -559,6 +571,7 @@ locked";
         assert_eq!(
             WorktreeStatus {
                 is_dirty: true,
+                is_stale: false,
                 ahead: 0,
                 behind: 3
             }
@@ -569,6 +582,7 @@ locked";
         assert_eq!(
             WorktreeStatus {
                 is_dirty: true,
+                is_stale: false,
                 ahead: 1,
                 behind: 1
             }
@@ -581,24 +595,28 @@ locked";
     fn test_is_clean_respects_all_fields() {
         assert!(WorktreeStatus {
             is_dirty: false,
+            is_stale: false,
             ahead: 0,
             behind: 0
         }
         .is_clean());
         assert!(!WorktreeStatus {
             is_dirty: true,
+            is_stale: false,
             ahead: 0,
             behind: 0
         }
         .is_clean());
         assert!(!WorktreeStatus {
             is_dirty: false,
+            is_stale: false,
             ahead: 1,
             behind: 0
         }
         .is_clean());
         assert!(!WorktreeStatus {
             is_dirty: false,
+            is_stale: false,
             ahead: 0,
             behind: 1
         }
