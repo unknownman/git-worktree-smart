@@ -8,10 +8,10 @@ Beautiful, productive, and safe Git worktree workflows without leaving your stan
 No bare repositories. No tedious path typing. Just smarter worktrees.
 
 [![CI](https://github.com/unknownman/git-worktree-smart/actions/workflows/ci.yml/badge.svg)](https://github.com/unknownman/git-worktree-smart/actions/workflows/ci.yml)
-[![Crates.io Version](https://img.shields.io/crates/v/git-worktree-smart.svg?style=flat&color=319795)](https://crates.io/crates/git-worktree-smart)
-[![Crates.io Downloads](https://img.shields.io/crates/d/git-worktree-smart.svg?style=flat&color=4299e1)](https://crates.io/crates/git-worktree-smart)
-[![Rust Edition](https://img.shields.io/badge/Rust-2021-e28743.svg)](https://www.rust-lang.org)
+[![Crates.io](https://img.shields.io/crates/v/git-worktree-smart.svg)](https://crates.io/crates/git-worktree-smart)
+[![Downloads](https://img.shields.io/crates/d/git-worktree-smart.svg)](https://crates.io/crates/git-worktree-smart)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/Rust-2021-orange.svg)](https://www.rust-lang.org)
 
 <br />
 
