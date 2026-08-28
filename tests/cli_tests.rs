@@ -793,3 +793,261 @@ fn test_add_with_relative_path_canonicalizes_cleanly() {
     cleanup_worktree(&root, "feature/rel");
     let _ = dir;
 }
+
+#[test]
+fn add_existing_local_branch_checks_it_out() {
+    let (dir, _cmd) = repo();
+    let root = dir.path().to_path_buf();
+    init_repo_with_commit(&root);
+
+    // Create a branch locally WITHOUT checking it out anywhere. `wt add` must
+    // check it out in the new worktree rather than trying to create a new one.
+    let branch = Command::new("git")
+        .args(["branch", "existing-feature"])
+        .current_dir(&root)
+        .status()
+        .expect("git branch existing-feature");
+    assert!(branch.success());
+
+    let mut add = wt();
+    add.current_dir(&root)
+        .arg("add")
+        .arg("existing-feature")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("existing-feature"));
+
+    // The inferred worktree directory must exist on disk.
+    let mut path = wt();
+    let linked = path
+        .current_dir(&root)
+        .arg("path")
+        .arg("existing-feature")
+        .output()
+        .expect("wt path existing-feature");
+    let linked = String::from_utf8(linked.stdout)
+        .expect("utf8")
+        .trim()
+        .to_string();
+    assert!(
+        std::path::Path::new(&linked).is_dir(),
+        "worktree directory not created: {linked}"
+    );
+
+    // The checked-out branch inside the new worktree must be the pre-existing
+    // local branch (not a freshly-created one).
+    let show = Command::new("git")
+        .args(["branch", "--show-current"])
+        .current_dir(&linked)
+        .output()
+        .expect("git branch --show-current");
+    assert!(show.status.success());
+    let branch = String::from_utf8(show.stdout).expect("utf8");
+    assert_eq!(branch.trim(), "existing-feature");
+
+    cleanup_worktree(&root, "existing-feature");
+    let _ = dir;
+}
+
+#[test]
+fn add_remote_only_branch_dwims_tracking() {
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let root = dir.path().to_path_buf();
+    init_repo_with_commit(&root);
+
+    // Set up a bare remote and push `remote-feature` to it, then delete the
+    // local branch so it exists ONLY on the remote.
+    let bare = dir.path().join("remote.git");
+    let init = Command::new("git")
+        .args(["init", "--bare", "-q"])
+        .arg(&bare)
+        .status()
+        .expect("git init --bare");
+    assert!(init.success());
+
+    let add_remote = Command::new("git")
+        .args(["remote", "add", "origin"])
+        .arg(&bare)
+        .current_dir(&root)
+        .status()
+        .expect("git remote add origin");
+    assert!(add_remote.success());
+
+    let push_main = Command::new("git")
+        .args(["push", "-q", "-u", "origin", "main"])
+        .current_dir(&root)
+        .status()
+        .expect("git push origin main");
+    assert!(push_main.success());
+
+    let create = Command::new("git")
+        .args(["branch", "remote-feature"])
+        .current_dir(&root)
+        .status()
+        .expect("git branch remote-feature");
+    assert!(create.success());
+
+    let push_feature = Command::new("git")
+        .args(["push", "-q", "-u", "origin", "remote-feature"])
+        .current_dir(&root)
+        .status()
+        .expect("git push origin remote-feature");
+    assert!(push_feature.success());
+
+    let del = Command::new("git")
+        .args(["branch", "-D", "remote-feature"])
+        .current_dir(&root)
+        .status()
+        .expect("git branch -D remote-feature");
+    assert!(del.success());
+
+    // `wt add` must successfully DWIM-track the remote-only branch.
+    let mut add = wt();
+    add.current_dir(&root)
+        .arg("add")
+        .arg("remote-feature")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("remote-feature"));
+
+    let mut path = wt();
+    let linked = path
+        .current_dir(&root)
+        .arg("path")
+        .arg("remote-feature")
+        .output()
+        .expect("wt path remote-feature");
+    let linked = String::from_utf8(linked.stdout)
+        .expect("utf8")
+        .trim()
+        .to_string();
+    assert!(
+        std::path::Path::new(&linked).is_dir(),
+        "worktree directory not created: {linked}"
+    );
+
+    // The new worktree's branch must have its upstream set via DWIM.
+    let upstream = Command::new("git")
+        .args(["rev-parse", "--abbrev-ref", "remote-feature@{u}"])
+        .current_dir(&linked)
+        .output()
+        .expect("git rev-parse remote-feature@{u}");
+    assert!(
+        upstream.status.success(),
+        "DWIM tracking not configured: {}",
+        String::from_utf8_lossy(&upstream.stderr)
+    );
+    let upstream = String::from_utf8(upstream.stdout).expect("utf8");
+    assert_eq!(upstream.trim(), "origin/remote-feature");
+
+    cleanup_worktree(&root, "remote-feature");
+    let _ = dir;
+}
+
+#[test]
+fn add_with_explicit_track_creates_branch() {
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let root = dir.path().to_path_buf();
+    init_repo_with_commit(&root);
+
+    // Set up a bare remote and push a `base-feature` branch, then delete the
+    // local "base-feature" so the only reference is on the remote.
+    let bare = dir.path().join("remote.git");
+    let init = Command::new("git")
+        .args(["init", "--bare", "-q"])
+        .arg(&bare)
+        .status()
+        .expect("git init --bare");
+    assert!(init.success());
+
+    let add_remote = Command::new("git")
+        .args(["remote", "add", "origin"])
+        .arg(&bare)
+        .current_dir(&root)
+        .status()
+        .expect("git remote add origin");
+    assert!(add_remote.success());
+
+    let push_main = Command::new("git")
+        .args(["push", "-q", "-u", "origin", "main"])
+        .current_dir(&root)
+        .status()
+        .expect("git push origin main");
+    assert!(push_main.success());
+
+    let create = Command::new("git")
+        .args(["branch", "base-feature"])
+        .current_dir(&root)
+        .status()
+        .expect("git branch base-feature");
+    assert!(create.success());
+
+    let push_base = Command::new("git")
+        .args(["push", "-q", "-u", "origin", "base-feature"])
+        .current_dir(&root)
+        .status()
+        .expect("git push origin base-feature");
+    assert!(push_base.success());
+
+    let del = Command::new("git")
+        .args(["branch", "-D", "base-feature"])
+        .current_dir(&root)
+        .status()
+        .expect("git branch -D base-feature");
+    assert!(del.success());
+
+    // Create a NEW local branch `new-feature` that explicitly tracks
+    // `origin/base-feature` as its upstream.
+    let mut add = wt();
+    add.current_dir(&root)
+        .arg("add")
+        .arg("new-feature")
+        .arg("--track")
+        .arg("origin/base-feature")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("new-feature"));
+
+    let mut path = wt();
+    let linked = path
+        .current_dir(&root)
+        .arg("path")
+        .arg("new-feature")
+        .output()
+        .expect("wt path new-feature");
+    let linked = String::from_utf8(linked.stdout)
+        .expect("utf8")
+        .trim()
+        .to_string();
+    assert!(
+        std::path::Path::new(&linked).is_dir(),
+        "worktree directory not created: {linked}"
+    );
+
+    // The checked-out branch must be the newly-created `new-feature`.
+    let show = Command::new("git")
+        .args(["branch", "--show-current"])
+        .current_dir(&linked)
+        .output()
+        .expect("git branch --show-current");
+    assert!(show.status.success());
+    let branch = String::from_utf8(show.stdout).expect("utf8");
+    assert_eq!(branch.trim(), "new-feature");
+
+    // Its upstream must be `origin/base-feature`.
+    let upstream = Command::new("git")
+        .args(["rev-parse", "--abbrev-ref", "new-feature@{u}"])
+        .current_dir(&linked)
+        .output()
+        .expect("git rev-parse new-feature@{u}");
+    assert!(
+        upstream.status.success(),
+        "upstream not configured: {}",
+        String::from_utf8_lossy(&upstream.stderr)
+    );
+    let upstream = String::from_utf8(upstream.stdout).expect("utf8");
+    assert_eq!(upstream.trim(), "origin/base-feature");
+
+    cleanup_worktree(&root, "new-feature");
+    let _ = dir;
+}

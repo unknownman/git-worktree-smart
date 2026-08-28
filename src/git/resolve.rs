@@ -53,8 +53,10 @@ pub fn resolve_from_worktrees(
     }
 
     if substring_matches.len() > 1 {
+        let candidates = substring_matches.iter().map(|wt| wt.name.clone()).collect();
         return Err(AppError::MultipleWorktreesMatch {
             query: query.to_owned(),
+            candidates,
         });
     }
 
@@ -150,8 +152,17 @@ pub fn resolve_from_worktrees(
     scored.sort_by_key(|(score, _)| std::cmp::Reverse(*score));
 
     if scored.len() > 1 && scored[0].0 == scored[1].0 {
+        // A tie for the top score is ambiguous. Collect every candidate that
+        // shares that exact top score so the user knows what to disambiguate.
+        let top_score = scored[0].0;
+        let candidates: Vec<String> = scored
+            .iter()
+            .filter(|(score, _)| *score == top_score)
+            .map(|(_, wt)| wt.name.clone())
+            .collect();
         return Err(AppError::MultipleWorktreesMatch {
             query: query.to_owned(),
+            candidates,
         });
     }
 
@@ -220,7 +231,10 @@ mod tests {
         let result = resolve_from_worktrees(&mock_worktrees(), "log");
         assert!(result.is_err());
         match result.unwrap_err() {
-            AppError::MultipleWorktreesMatch { query } => assert_eq!(query, "log"),
+            AppError::MultipleWorktreesMatch { query, candidates } => {
+                assert_eq!(query, "log");
+                assert_eq!(candidates, vec!["feature/login", "feature/logout"]);
+            }
             other => panic!("expected MultipleWorktreesMatch, got {other:?}"),
         }
     }
@@ -236,7 +250,10 @@ mod tests {
         let result = resolve_from_worktrees(&mock_worktrees(), "f/l");
         assert!(result.is_err());
         match result.unwrap_err() {
-            AppError::MultipleWorktreesMatch { query } => assert_eq!(query, "f/l"),
+            AppError::MultipleWorktreesMatch { query, candidates } => {
+                assert_eq!(query, "f/l");
+                assert_eq!(candidates, vec!["feature/login", "feature/logout"]);
+            }
             other => panic!("expected MultipleWorktreesMatch, got {other:?}"),
         }
     }

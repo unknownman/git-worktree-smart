@@ -49,8 +49,14 @@ pub enum AppError {
     #[error("No worktree found for query `{query}`.")]
     WorktreeNotFound { query: String },
 
-    #[error("Multiple worktrees match `{query}`. Please be more specific.")]
-    MultipleWorktreesMatch { query: String },
+    #[error(
+        "Multiple worktrees match `{query}`. Candidates are: {}",
+        .candidates.join(", ")
+    )]
+    MultipleWorktreesMatch {
+        query: String,
+        candidates: Vec<String>,
+    },
 
     #[error("Branch `{branch}` already exists locally. Cannot specify `--base` or `--track` when checking out an existing branch.")]
     BranchAlreadyExistsCannotSpecifyBaseOrTrack { branch: String },
