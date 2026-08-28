@@ -1,7 +1,7 @@
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 
-use crate::error::AppError;
+use crate::error::{AppError, CandidateMatch};
 use crate::git::parse::get_worktrees;
 use crate::models::WorktreeInfo;
 use crate::Context;
@@ -53,7 +53,10 @@ pub fn resolve_from_worktrees(
     }
 
     if substring_matches.len() > 1 {
-        let candidates = substring_matches.iter().map(|wt| wt.name.clone()).collect();
+        let candidates = substring_matches
+            .iter()
+            .map(|wt| candidate_from_wt(wt))
+            .collect();
         return Err(AppError::MultipleWorktreesMatch {
             query: query.to_owned(),
             candidates,
@@ -155,10 +158,10 @@ pub fn resolve_from_worktrees(
         // A tie for the top score is ambiguous. Collect every candidate that
         // shares that exact top score so the user knows what to disambiguate.
         let top_score = scored[0].0;
-        let candidates: Vec<String> = scored
+        let candidates: Vec<CandidateMatch> = scored
             .iter()
             .filter(|(score, _)| *score == top_score)
-            .map(|(_, wt)| wt.name.clone())
+            .map(|(_, wt)| candidate_from_wt(wt))
             .collect();
         return Err(AppError::MultipleWorktreesMatch {
             query: query.to_owned(),
@@ -167,6 +170,16 @@ pub fn resolve_from_worktrees(
     }
 
     Ok(scored[0].1.clone())
+}
+
+/// Build a [`CandidateMatch`] from a worktree, capturing its name, branch, and
+/// path so an ambiguous-match error can tell the user exactly what matched.
+fn candidate_from_wt(wt: &WorktreeInfo) -> CandidateMatch {
+    CandidateMatch {
+        name: wt.name.clone(),
+        branch: wt.branch.clone(),
+        path: wt.path.clone(),
+    }
 }
 
 #[cfg(test)]
@@ -233,7 +246,19 @@ mod tests {
         match result.unwrap_err() {
             AppError::MultipleWorktreesMatch { query, candidates } => {
                 assert_eq!(query, "log");
-                assert_eq!(candidates, vec!["feature/login", "feature/logout"]);
+                assert_eq!(candidates.len(), 2);
+                assert_eq!(candidates[0].name, "feature/login");
+                assert_eq!(candidates[0].branch.as_deref(), Some("feature/login"));
+                assert_eq!(
+                    candidates[0].path,
+                    PathBuf::from("/repos/project-feature/login")
+                );
+                assert_eq!(candidates[1].name, "feature/logout");
+                assert_eq!(candidates[1].branch.as_deref(), Some("feature/logout"));
+                assert_eq!(
+                    candidates[1].path,
+                    PathBuf::from("/repos/project-feature/logout")
+                );
             }
             other => panic!("expected MultipleWorktreesMatch, got {other:?}"),
         }
@@ -252,7 +277,19 @@ mod tests {
         match result.unwrap_err() {
             AppError::MultipleWorktreesMatch { query, candidates } => {
                 assert_eq!(query, "f/l");
-                assert_eq!(candidates, vec!["feature/login", "feature/logout"]);
+                assert_eq!(candidates.len(), 2);
+                assert_eq!(candidates[0].name, "feature/login");
+                assert_eq!(candidates[0].branch.as_deref(), Some("feature/login"));
+                assert_eq!(
+                    candidates[0].path,
+                    PathBuf::from("/repos/project-feature/login")
+                );
+                assert_eq!(candidates[1].name, "feature/logout");
+                assert_eq!(candidates[1].branch.as_deref(), Some("feature/logout"));
+                assert_eq!(
+                    candidates[1].path,
+                    PathBuf::from("/repos/project-feature/logout")
+                );
             }
             other => panic!("expected MultipleWorktreesMatch, got {other:?}"),
         }

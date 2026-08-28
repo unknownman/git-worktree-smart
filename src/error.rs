@@ -1,6 +1,16 @@
 use std::path::PathBuf;
 
+use serde::Serialize;
 use thiserror::Error;
+
+/// A single worktree that matched an ambiguous query, surfaced to the user so
+/// they can disambiguate. Also serialized into JSON for `--json` error output.
+#[derive(Debug, Clone, Serialize)]
+pub struct CandidateMatch {
+    pub name: String,
+    pub branch: Option<String>,
+    pub path: PathBuf,
+}
 
 #[derive(Debug, Error)]
 pub enum AppError {
@@ -49,13 +59,10 @@ pub enum AppError {
     #[error("No worktree found for query `{query}`.")]
     WorktreeNotFound { query: String },
 
-    #[error(
-        "Multiple worktrees match `{query}`. Candidates are: {}",
-        .candidates.join(", ")
-    )]
+    #[error("Multiple worktrees match `{query}`")]
     MultipleWorktreesMatch {
         query: String,
-        candidates: Vec<String>,
+        candidates: Vec<CandidateMatch>,
     },
 
     #[error("Branch `{branch}` already exists locally. Cannot specify `--base` or `--track` when checking out an existing branch.")]

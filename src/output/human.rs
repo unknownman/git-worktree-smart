@@ -95,7 +95,7 @@ fn normalize_separators(s: String) -> String {
     }
 }
 
-fn shorten_home(path: &Path) -> String {
+pub(crate) fn shorten_home(path: &Path) -> String {
     if let Some(home) = dirs::home_dir() {
         // Use `Path::strip_prefix` (component-aware) so a path like
         // `/home/developer/repo` is never mistaken for being under
@@ -157,6 +157,11 @@ pub fn print_switch_success(info: &WorktreeInfo) {
         "{} {}",
         "To switch instantly, use:".dimmed(),
         "cd $(wt path <query>)".yellow().bold(),
+    );
+    println!(
+        "{} {}",
+        "💡 Tip:".yellow().bold(),
+        "Add a shell wrapper to ~/.zshrc or ~/.bashrc for seamless switching (see `wt switch --help`).".dimmed(),
     );
 }
 

@@ -10,7 +10,8 @@ use std::process::ExitCode;
 use clap::error::ErrorKind;
 use clap::Parser;
 use cli::{Cli, Commands};
-use error::AppError;
+use error::{AppError, CandidateMatch};
+use output::human::shorten_home;
 use owo_colors::OwoColorize;
 
 pub struct Context {
@@ -93,6 +94,15 @@ fn dispatch(cli: &Cli, ctx: &Context) -> Result<(), AppError> {
 }
 
 fn render_error(ctx: &Context, err: &AppError) {
+    if let AppError::MultipleWorktreesMatch { query, candidates } = err {
+        if ctx.json {
+            render_json_multiple_error(query, candidates);
+        } else {
+            render_human_multiple_error(query, candidates);
+        }
+        return;
+    }
+
     if ctx.json {
         let obj = serde_json::json!({ "error": err.to_string() });
         eprintln!(
@@ -103,4 +113,43 @@ fn render_error(ctx: &Context, err: &AppError) {
     } else {
         eprintln!("{} {}", "Error:".bold().red(), err);
     }
+}
+
+/// Render an ambiguous query in human-readable form, listing every matched
+/// worktree (with `~`-shortened path) so the user knows how to disambiguate.
+fn render_human_multiple_error(query: &str, candidates: &[CandidateMatch]) {
+    eprintln!(
+        "{} Multiple worktrees match `{}`.",
+        "Error:".bold().red(),
+        query.cyan()
+    );
+    eprintln!("{}", "Did you mean one of these?".bold());
+    let max_name_len = candidates.iter().map(|c| c.name.len()).max().unwrap_or(0);
+    for c in candidates {
+        let padding = " ".repeat(max_name_len.saturating_sub(c.name.len()) + 2);
+        eprintln!(
+            "  {} {}{}{}",
+            "•".cyan().bold(),
+            c.name.cyan(),
+            padding,
+            format!("({})", shorten_home(&c.path)).dimmed()
+        );
+    }
+    eprintln!(
+        "{} Be more specific or provide the exact branch name.",
+        "💡 Tip:".yellow().bold()
+    );
+}
+
+/// Render an ambiguous query as strict JSON, embedding a structured `candidates`
+/// array so `--json` consumers can disambiguate programmatically.
+fn render_json_multiple_error(query: &str, candidates: &[CandidateMatch]) {
+    let obj = serde_json::json!({
+        "error": format!("Multiple worktrees match `{query}`"),
+        "candidates": candidates,
+    });
+    eprintln!(
+        "{}",
+        serde_json::to_string_pretty(&obj).unwrap_or_else(|_| r#"{"error":"unknown"}"#.to_owned())
+    );
 }

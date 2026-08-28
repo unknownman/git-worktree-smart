@@ -1051,3 +1051,306 @@ fn add_with_explicit_track_creates_branch() {
     cleanup_worktree(&root, "new-feature");
     let _ = dir;
 }
+
+#[test]
+fn test_ambiguous_match_human_and_json_errors() {
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let root = dir.path().to_path_buf();
+    init_repo_with_commit(&root);
+
+    for branch in ["feature/login", "feature/logout"] {
+        let mut add = wt();
+        add.current_dir(&root)
+            .arg("add")
+            .arg(branch)
+            .assert()
+            .success();
+    }
+
+    // 1. Human output verification for `wt path log`
+    let mut cmd = wt();
+    cmd.current_dir(&root)
+        .arg("path")
+        .arg("log")
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("Multiple worktrees match"))
+        .stderr(predicate::str::contains("Did you mean one of these?"))
+        .stderr(predicate::str::contains("feature/login"))
+        .stderr(predicate::str::contains("feature/logout"))
+        .stderr(predicate::str::contains(
+            "Be more specific or provide the exact branch name.",
+        ));
+
+    // 2. JSON output verification for `wt path log --json`
+    let mut cmd = wt();
+    let out = cmd
+        .current_dir(&root)
+        .arg("--json")
+        .arg("path")
+        .arg("log")
+        .output()
+        .expect("wt --json path log");
+    assert_eq!(out.status.code(), Some(1));
+    let stderr_str = String::from_utf8(out.stderr).expect("utf8");
+    let v: serde_json::Value = serde_json::from_str(&stderr_str).expect("valid json error");
+    assert_eq!(v["error"], "Multiple worktrees match `log`");
+    assert!(v["candidates"].is_array());
+    let candidates = v["candidates"].as_array().unwrap();
+    assert_eq!(candidates.len(), 2);
+    assert_eq!(candidates[0]["name"], "feature/login");
+    assert_eq!(candidates[0]["branch"], "feature/login");
+    assert!(candidates[0]["path"].is_string());
+    assert_eq!(candidates[1]["name"], "feature/logout");
+    assert_eq!(candidates[1]["branch"], "feature/logout");
+    assert!(candidates[1]["path"].is_string());
+
+    // 3. Ambiguous match in `wt switch log`
+    let mut cmd = wt();
+    cmd.current_dir(&root)
+        .arg("switch")
+        .arg("log")
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("Multiple worktrees match"));
+
+    // 4. Ambiguous match in `wt remove log`
+    let mut cmd = wt();
+    cmd.current_dir(&root)
+        .arg("remove")
+        .arg("log")
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("Multiple worktrees match"));
+
+    cleanup_worktree(&root, "feature/login");
+    cleanup_worktree(&root, "feature/logout");
+    let _ = dir;
+}
+
+#[test]
+fn test_add_with_explicit_base_branch() {
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let root = dir.path().to_path_buf();
+
+    let init = Command::new("git")
+        .args(["init", "-q", "-b", "main"])
+        .current_dir(&root)
+        .status()
+        .expect("git init");
+    assert!(init.success());
+
+    let commit_a = Command::new("git")
+        .args(["commit", "--allow-empty", "-m", "commit A"])
+        .current_dir(&root)
+        .status()
+        .expect("commit A");
+    assert!(commit_a.success());
+
+    let hash_a = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(&root)
+        .output()
+        .expect("rev-parse A");
+    let hash_a = String::from_utf8(hash_a.stdout)
+        .expect("utf8")
+        .trim()
+        .to_string();
+
+    let commit_b = Command::new("git")
+        .args(["commit", "--allow-empty", "-m", "commit B"])
+        .current_dir(&root)
+        .status()
+        .expect("commit B");
+    assert!(commit_b.success());
+
+    let hash_b = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(&root)
+        .output()
+        .expect("rev-parse B");
+    let hash_b = String::from_utf8(hash_b.stdout)
+        .expect("utf8")
+        .trim()
+        .to_string();
+    assert_ne!(hash_a, hash_b);
+
+    let mut add = wt();
+    add.current_dir(&root)
+        .arg("add")
+        .arg("feature/from-base")
+        .arg("HEAD~1")
+        .assert()
+        .success();
+
+    let mut path = wt();
+    let linked = path
+        .current_dir(&root)
+        .arg("path")
+        .arg("feature/from-base")
+        .output()
+        .expect("wt path");
+    let linked = String::from_utf8(linked.stdout)
+        .expect("utf8")
+        .trim()
+        .to_string();
+
+    let head_hash = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(&linked)
+        .output()
+        .expect("rev-parse linked HEAD");
+    let head_hash = String::from_utf8(head_hash.stdout)
+        .expect("utf8")
+        .trim()
+        .to_string();
+    assert_eq!(head_hash, hash_a);
+
+    cleanup_worktree(&root, "feature/from-base");
+    let _ = dir;
+}
+
+#[test]
+fn test_add_invoked_from_nested_subdirectory() {
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let root = dir.path().to_path_buf();
+    init_repo_with_commit(&root);
+
+    let nested = root.join("src").join("nested").join("sub");
+    std::fs::create_dir_all(&nested).expect("create nested dir");
+
+    let mut add = wt();
+    add.current_dir(&nested)
+        .arg("add")
+        .arg("feature/nested-test")
+        .assert()
+        .success();
+
+    let expected = sibling_name(&root, "feature-nested-test");
+    let expected_canon = dunce::canonicalize(&expected).unwrap_or(expected.clone());
+
+    let mut path = wt();
+    let linked = path
+        .current_dir(&root)
+        .arg("path")
+        .arg("feature/nested-test")
+        .output()
+        .expect("wt path");
+    let linked = String::from_utf8(linked.stdout)
+        .expect("utf8")
+        .trim()
+        .to_string();
+    let linked_canon =
+        dunce::canonicalize(&linked).unwrap_or_else(|_| std::path::PathBuf::from(&linked));
+
+    assert_eq!(linked_canon, expected_canon);
+    assert!(!nested.join("feature-nested-test").exists());
+
+    cleanup_worktree(&root, "feature/nested-test");
+    let _ = dir;
+}
+
+#[test]
+fn test_add_json_output_schema() {
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let root = dir.path().to_path_buf();
+    init_repo_with_commit(&root);
+
+    let mut add = wt();
+    let out = add
+        .current_dir(&root)
+        .arg("add")
+        .arg("--json")
+        .arg("feature/json-test")
+        .output()
+        .expect("wt add --json");
+    assert!(out.status.success());
+
+    let stdout = String::from_utf8(out.stdout).expect("utf8");
+    let v: serde_json::Value = serde_json::from_str(&stdout).expect("valid JSON");
+
+    assert_eq!(v["name"], "feature/json-test");
+    assert_eq!(v["branch"], "feature/json-test");
+    assert!(v["path"].is_string());
+    assert!(v["head_hash"].is_string());
+    assert!(!v["head_hash"].as_str().unwrap().is_empty());
+    assert!(v["head_msg"].is_string());
+
+    let status = &v["status"];
+    assert!(status.is_object());
+    assert_eq!(status["is_dirty"], false);
+    assert_eq!(status["is_stale"], false);
+    assert_eq!(status["ahead"], 0);
+    assert_eq!(status["behind"], 0);
+
+    cleanup_worktree(&root, "feature/json-test");
+    let _ = dir;
+}
+
+#[test]
+fn test_ambiguous_match_error_formatting() {
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let root = dir.path().to_path_buf();
+    init_repo_with_commit(&root);
+
+    for branch in ["feature/login-v1", "feature/login-v2"] {
+        let mut add = wt();
+        add.current_dir(&root)
+            .arg("add")
+            .arg(branch)
+            .assert()
+            .success();
+    }
+
+    let mut cmd = wt();
+    cmd.current_dir(&root)
+        .arg("path")
+        .arg("login")
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("feature/login-v1"))
+        .stderr(predicate::str::contains("feature/login-v2"));
+
+    let mut cmd = wt();
+    let out = cmd
+        .current_dir(&root)
+        .arg("path")
+        .arg("--json")
+        .arg("login")
+        .output()
+        .expect("wt path --json login");
+    assert_eq!(out.status.code(), Some(1));
+    let stderr_str = String::from_utf8(out.stderr).expect("utf8");
+    let v: serde_json::Value = serde_json::from_str(&stderr_str).expect("valid JSON");
+    assert!(v["candidates"].is_array());
+    let candidates = v["candidates"].as_array().unwrap();
+    assert_eq!(candidates.len(), 2);
+    let names: Vec<&str> = candidates
+        .iter()
+        .filter_map(|c| c["name"].as_str())
+        .collect();
+    assert!(names.contains(&"feature/login-v1"));
+    assert!(names.contains(&"feature/login-v2"));
+
+    cleanup_worktree(&root, "feature/login-v1");
+    cleanup_worktree(&root, "feature/login-v2");
+    let _ = dir;
+}
+
+#[test]
+fn test_switch_human_output_guidance() {
+    let (dir, root, _linked) = repo_with_worktree();
+
+    let mut cmd = wt();
+    cmd.current_dir(&root)
+        .arg("switch")
+        .arg("main")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Target resolved:"))
+        .stdout(predicate::str::contains("cd $(wt path"))
+        .stdout(predicate::str::contains(".zshrc"));
+
+    cleanup_worktree(&root, "feature/demo");
+    let _ = dir;
+}
