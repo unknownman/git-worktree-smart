@@ -6,11 +6,42 @@ fn wt() -> assert_cmd::Command {
     assert_cmd::Command::cargo_bin("wt").unwrap()
 }
 
+/// Helper function to configure git author/committer identity locally for a repo root.
+fn configure_git_user(root: &std::path::Path) {
+    let name_status = Command::new("git")
+        .args(["config", "user.name", "Test User"])
+        .current_dir(root)
+        .status()
+        .expect("git config user.name");
+    assert!(name_status.success());
+
+    let email_status = Command::new("git")
+        .args(["config", "user.email", "test@example.com"])
+        .current_dir(root)
+        .status()
+        .expect("git config user.email");
+    assert!(email_status.success());
+}
+
+/// Helper function to create an empty git commit with explicit author/committer environment variables.
+fn git_commit_empty(root: &std::path::Path, message: &str) {
+    let commit = Command::new("git")
+        .args(["commit", "--allow-empty", "-m", message])
+        .env("GIT_AUTHOR_NAME", "Test User")
+        .env("GIT_AUTHOR_EMAIL", "test@example.com")
+        .env("GIT_COMMITTER_NAME", "Test User")
+        .env("GIT_COMMITTER_EMAIL", "test@example.com")
+        .current_dir(root)
+        .status()
+        .expect("git commit");
+    assert!(commit.success());
+}
+
 /// Create a throwaway git repo and return its path, with a `Command` already
 /// set to run inside it.
 ///
-/// Forces the initial branch to `main` so tests are independent of the user's
-/// global `init.defaultBranch` setting (e.g. systems defaulting to `master`).
+/// Forces the initial branch to `main` and configures local git credentials
+/// so tests are hermetic across all CI environments.
 fn repo() -> (tempfile::TempDir, assert_cmd::Command) {
     let dir = tempfile::tempdir().expect("create tempdir");
     let status = Command::new("git")
@@ -19,6 +50,8 @@ fn repo() -> (tempfile::TempDir, assert_cmd::Command) {
         .status()
         .expect("git init");
     assert!(status.success(), "git init failed");
+
+    configure_git_user(dir.path());
 
     let mut cmd = wt();
     cmd.current_dir(dir.path());
@@ -97,12 +130,7 @@ fn add_creates_worktree_and_list_round_trips() {
     let repo_root = dir.path().to_path_buf();
 
     // Create a first commit so a branch can be made.
-    let commit = Command::new("git")
-        .args(["commit", "--allow-empty", "-m", "initial"])
-        .current_dir(&repo_root)
-        .status()
-        .expect("git commit");
-    assert!(commit.success());
+    git_commit_empty(&repo_root, "initial");
 
     cmd.arg("add")
         .arg("feature/login")
@@ -195,12 +223,8 @@ fn repo_with_worktree() -> (tempfile::TempDir, std::path::PathBuf, std::path::Pa
         .expect("git init");
     assert!(init.success());
 
-    let commit = Command::new("git")
-        .args(["commit", "--allow-empty", "-m", "initial"])
-        .current_dir(&root)
-        .status()
-        .expect("git commit");
-    assert!(commit.success());
+    configure_git_user(&root);
+    git_commit_empty(&root, "initial");
 
     // Add a linked worktree on its own branch (path inferred by `wt add`).
     let mut add = wt();
@@ -391,12 +415,8 @@ fn init_repo_with_commit(root: &std::path::Path) {
         .expect("git init");
     assert!(init.success());
 
-    let commit = Command::new("git")
-        .args(["commit", "--allow-empty", "-m", "initial"])
-        .current_dir(root)
-        .status()
-        .expect("git commit");
-    assert!(commit.success());
+    configure_git_user(root);
+    git_commit_empty(root, "initial");
 }
 
 #[test]
@@ -538,12 +558,8 @@ fn test_remove_detached_worktree_with_unreachable_commits_fails_without_force() 
         .expect("git checkout --detach");
     assert!(detach.success());
 
-    let commit = Command::new("git")
-        .args(["commit", "--allow-empty", "-m", "only on detached head"])
-        .current_dir(&linked)
-        .status()
-        .expect("git commit");
-    assert!(commit.success());
+    configure_git_user(&linked);
+    git_commit_empty(&linked, "only on detached head");
 
     // Resolve by absolute path (the branch name is no longer valid once
     // detached) and attempt removal from the main repo root.
@@ -673,12 +689,8 @@ fn test_remove_branch_with_upstream_ahead_fails_without_force() {
     assert!(push_branch.success());
 
     // Commit locally so the branch is now 1 commit ahead of its upstream.
-    let commit = Command::new("git")
-        .args(["commit", "--allow-empty", "-m", "ahead of upstream"])
-        .current_dir(&linked)
-        .status()
-        .expect("git commit in linked worktree");
-    assert!(commit.success());
+    configure_git_user(&linked);
+    git_commit_empty(&linked, "ahead of upstream");
 
     // Without --force: must refuse removal of an unpushed commit.
     let mut cmd = wt();
@@ -1140,12 +1152,8 @@ fn test_add_with_explicit_base_branch() {
         .expect("git init");
     assert!(init.success());
 
-    let commit_a = Command::new("git")
-        .args(["commit", "--allow-empty", "-m", "commit A"])
-        .current_dir(&root)
-        .status()
-        .expect("commit A");
-    assert!(commit_a.success());
+    configure_git_user(&root);
+    git_commit_empty(&root, "commit A");
 
     let hash_a = Command::new("git")
         .args(["rev-parse", "HEAD"])
@@ -1157,12 +1165,7 @@ fn test_add_with_explicit_base_branch() {
         .trim()
         .to_string();
 
-    let commit_b = Command::new("git")
-        .args(["commit", "--allow-empty", "-m", "commit B"])
-        .current_dir(&root)
-        .status()
-        .expect("commit B");
-    assert!(commit_b.success());
+    git_commit_empty(&root, "commit B");
 
     let hash_b = Command::new("git")
         .args(["rev-parse", "HEAD"])
