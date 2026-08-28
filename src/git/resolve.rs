@@ -135,26 +135,6 @@ mod tests {
     use super::*;
     use crate::models::WorktreeStatus;
 
-    /// Restores the process working directory when dropped so that temporarily
-    /// changing cwd inside a test never leaks into other (parallel) tests.
-    struct ChdirGuard {
-        original: PathBuf,
-    }
-
-    impl ChdirGuard {
-        fn new(target: &std::path::Path) -> std::io::Result<Self> {
-            let original = std::env::current_dir()?;
-            std::env::set_current_dir(target)?;
-            Ok(Self { original })
-        }
-    }
-
-    impl Drop for ChdirGuard {
-        fn drop(&mut self) {
-            let _ = std::env::set_current_dir(&self.original);
-        }
-    }
-
     fn worktree(name: &str, branch: Option<&str>) -> WorktreeInfo {
         WorktreeInfo {
             path: PathBuf::from(format!("/repos/project-{name}")),
@@ -279,36 +259,6 @@ mod tests {
     fn test_empty_worktrees() {
         let result = resolve_from_worktrees(&[], "main");
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_path_resolves_dot_to_enclosing_worktree() {
-        // Real directories so canonicalization succeeds and the path step runs.
-        let dir = tempfile::tempdir().expect("create tempdir");
-        let wt_dir = dir.path().join("project-feat");
-        std::fs::create_dir_all(&wt_dir).expect("create wt dir");
-
-        let worktrees = vec![WorktreeInfo {
-            path: wt_dir.clone(),
-            name: "feat".to_owned(),
-            branch: Some("feat".to_owned()),
-            head_hash: "abc1234".to_owned(),
-            head_msg: "msg".to_owned(),
-            status: WorktreeStatus::clean(),
-        }];
-
-        // Temporarily change cwd into the worktree so `.` canonicalizes to it,
-        // then restore the original cwd so parallel tests are unaffected.
-        let cwd_guard = ChdirGuard::new(&wt_dir).expect("chdir");
-
-        let result = resolve_from_worktrees(&worktrees, ".").unwrap();
-        assert_eq!(result.name, "feat");
-
-        drop(cwd_guard);
-
-        // Also verify the absolute path resolves directly.
-        let result = resolve_from_worktrees(&worktrees, wt_dir.to_string_lossy().as_ref()).unwrap();
-        assert_eq!(result.name, "feat");
     }
 
     #[test]

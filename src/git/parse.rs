@@ -208,9 +208,12 @@ pub fn parse_rev_list_count(output: &str) -> (u32, u32) {
 }
 
 fn check_dirty(cwd: &Path, verbose: bool) -> Result<bool, AppError> {
-    // `-uall` also reports untracked files inside nested untracked directories,
-    // so we never miss uncommitted content.
-    let output = run_git(&["status", "--porcelain", "-uall"], Some(cwd), verbose)?;
+    // We only need a boolean dirty flag, and default `--porcelain` already emits
+    // `?? dir/` for untracked directories. Avoid `-uall`, which forces Git to
+    // recursively read every file in untracked dirs (e.g. node_modules/,
+    // target/), causing a huge IO spike when every worktree is scanned in
+    // parallel by `wt list`.
+    let output = run_git(&["status", "--porcelain"], Some(cwd), verbose)?;
     Ok(parse_dirty(&output))
 }
 

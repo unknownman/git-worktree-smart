@@ -138,18 +138,13 @@ pub fn get_main_worktree_root(verbose: bool) -> Result<PathBuf, AppError> {
 
     // If the reported main-worktree path is actually the git common directory
     // (a submodule's gitdir), it is not a real worktree — fall back to the true
-    // worktree root reported by `--show-toplevel`.
+    // worktree root by querying the toplevel from the perspective of that gitdir.
     if path_is_within(&reported, &common_dir) {
-        return get_current_worktree_root(verbose);
+        let toplevel = run_git(&["rev-parse", "--show-toplevel"], Some(&reported), verbose)?;
+        return dunce::canonicalize(&toplevel).map_err(AppError::Io);
     }
 
     dunce::canonicalize(&reported).map_err(AppError::Io)
-}
-
-/// Return the canonicalized root of the *current* worktree (`--show-toplevel`).
-fn get_current_worktree_root(verbose: bool) -> Result<PathBuf, AppError> {
-    let toplevel = run_git(&["rev-parse", "--show-toplevel"], None, verbose)?;
-    dunce::canonicalize(&toplevel).map_err(AppError::Io)
 }
 
 /// Returns `true` if `path` equals or is a descendant of `ancestor`.
