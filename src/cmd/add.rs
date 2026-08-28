@@ -93,6 +93,14 @@ pub fn run(
         }
     }
 
+    // Native `git worktree add` does not create missing intermediate
+    // directories, so pre-create the parent of the target path when the user
+    // supplies a custom location (e.g. `--path ../missing/dir`). `create_dir_all`
+    // is a no-op if the directories already exist.
+    if let Some(parent) = target_path.parent() {
+        std::fs::create_dir_all(parent).map_err(AppError::Io)?;
+    }
+
     ops::add_worktree(
         ctx.verbose,
         &target_path,

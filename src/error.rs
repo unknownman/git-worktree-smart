@@ -17,7 +17,7 @@ pub enum AppError {
     WorktreeIsDirty { path: PathBuf },
 
     #[error(
-        "Worktree at `{path}` has {ahead} unpushed commit(s). 💡 Pass --force to delete it anyway."
+        "Worktree at `{path}` has {ahead} unmerged or unpushed commit(s). 💡 Pass --force to delete it anyway."
     )]
     UnpushedCommits { path: PathBuf, ahead: u32 },
 

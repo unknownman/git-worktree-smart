@@ -82,6 +82,19 @@ fn format_path(wt: &WorktreeInfo) -> String {
     display.dimmed().to_string()
 }
 
+/// Normalize path separators to forward slashes for consistent cross-OS display.
+///
+/// On Windows `Path::display()` uses `\`, which yields ugly mixed separators
+/// like `~/Documents\Repo`. Replacing `\` with `/` keeps the terminal UI clean
+/// and uniform on every platform.
+fn normalize_separators(s: String) -> String {
+    if std::path::MAIN_SEPARATOR == '\\' {
+        s.replace('\\', "/")
+    } else {
+        s
+    }
+}
+
 fn shorten_home(path: &Path) -> String {
     if let Some(home) = dirs::home_dir() {
         // Use `Path::strip_prefix` (component-aware) so a path like
@@ -91,11 +104,11 @@ fn shorten_home(path: &Path) -> String {
         // Note: `dunce::canonicalize` strips the Windows `\\?\` UNC wrapper at
         // the source, so no manual stripping is needed here.
         if let Ok(rest) = path.strip_prefix(&home) {
-            return format!("~/{}", rest.display());
+            return normalize_separators(format!("~/{}", rest.display()));
         }
     }
 
-    path.to_string_lossy().into_owned()
+    normalize_separators(path.to_string_lossy().into_owned())
 }
 
 fn format_commit(wt: &WorktreeInfo) -> String {
