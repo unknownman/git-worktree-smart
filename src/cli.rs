@@ -81,12 +81,12 @@ pub enum Commands {
     ///
     /// Matches worktrees via exact, substring, or fuzzy matching. Because a
     /// child process cannot change the parent shell's directory, pair this with
-    /// the path command instead: `cd $(wt path feature/auth)`.
+    /// the path command instead: `cd "$(wt path feature/auth)"`.
     #[command(
         alias = "cd",
         after_help = "SHELL INTEGRATION:\n\
             A child process cannot change the parent shell's directory, so pair\n\
-            switch with the path command: `cd $(wt path feature/auth)`.\n\
+            switch with the path command: `cd \"$(wt path feature/auth)\"`.\n\
             For instant switching, add this wrapper to ~/.zshrc or ~/.bashrc:\n\n\
             wt() {\n\
                 local has_json=false\n\
@@ -166,11 +166,11 @@ pub enum Commands {
 
     /// Print the absolute path of a target worktree.
     ///
-    /// Useful for scripting: `cd $(wt path feature/auth)`. Prints only the
+    /// Useful for scripting: `cd "$(wt path feature/auth)"`. Prints only the
     /// path to stdout, so it is safe to shell-evaluate.
     #[command(after_help = "EXAMPLES:\n\
             wt path login                  # fuzzy-match a worktree\n\
-            cd $(wt path feature/auth)     # shell-eval to change directory")]
+            cd \"$(wt path feature/auth)\"   # shell-eval to change directory")]
     Path {
         /// Branch name or path substring to match against.
         ///

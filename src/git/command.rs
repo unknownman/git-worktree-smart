@@ -149,14 +149,10 @@ pub fn get_main_worktree_root(verbose: bool) -> Result<PathBuf, AppError> {
 
 /// Returns `true` if `path` equals or is a descendant of `ancestor`.
 fn path_is_within(path: &Path, ancestor: &Path) -> bool {
-    // Both arguments are absolute and already canonicalized by callers, so a
-    // plain component-wise prefix comparison is sufficient.
-    let path = path.to_string_lossy();
-    let ancestor = ancestor.to_string_lossy();
-    if ancestor.is_empty() {
-        return false;
-    }
-    path == ancestor || path.starts_with(&format!("{ancestor}/"))
+    // `Path::starts_with` is component-aware and handles cross-platform
+    // separators (`/` on Unix, `\` on Windows) correctly, unlike a string-prefix
+    // comparison with a hardcoded separator.
+    path.starts_with(ancestor)
 }
 
 /// Return the canonicalized path of the repository's Git **common directory**.

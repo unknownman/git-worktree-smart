@@ -7,6 +7,7 @@ mod output;
 
 use std::process::ExitCode;
 
+use clap::error::ErrorKind;
 use clap::Parser;
 use cli::{Cli, Commands};
 use error::AppError;
@@ -18,7 +19,40 @@ pub struct Context {
 }
 
 fn main() -> ExitCode {
-    let cli = Cli::parse();
+    // Use `try_parse` so an early CLI failure (e.g. `wt add --json` with a
+    // missing branch name) can still honor the `--json` flag's promise of
+    // strict, machine-readable output instead of raw human-readable stderr.
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(err) => {
+            // `--help` and `--version` are reported as errors by `try_parse`,
+            // but they are not failures: print them and exit successfully.
+            if matches!(
+                err.kind(),
+                ErrorKind::DisplayHelp | ErrorKind::DisplayVersion
+            ) {
+                err.print().unwrap();
+                return ExitCode::SUCCESS;
+            }
+
+            // Other early failures (e.g. `wt add --json` with a missing branch)
+            // must still honor `--json`'s promise of machine-readable output.
+            let wants_json = std::env::args().any(|arg| arg == "--json");
+            if wants_json {
+                let error_msg = err.to_string();
+                let error = error_msg.trim();
+                eprintln!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({ "error": error }))
+                        .unwrap_or_else(|_| r#"{"error":"unknown"}"#.to_owned())
+                );
+            } else {
+                // Retain clap's default human-readable rendering (incl. usage).
+                err.print().unwrap();
+            }
+            return ExitCode::from(2);
+        }
+    };
 
     let ctx = Context {
         json: cli.json,

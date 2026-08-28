@@ -188,13 +188,17 @@ pub fn get_worktree_info(
 
     let head_msg = get_head_message(&head_hash, path, verbose)?;
 
+    // Fetch the real status: if the branch is ahead of or behind its upstream,
+    // `wt add` should report that accurately rather than hardcoding "clean".
+    let status = get_worktree_status(path, verbose)?;
+
     Ok(WorktreeInfo {
         path: path.to_path_buf(),
         name,
         branch: branch.map(|b| b.to_owned()),
         head_hash,
         head_msg,
-        status: WorktreeStatus::clean(),
+        status,
     })
 }
 
