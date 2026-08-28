@@ -1,6 +1,6 @@
 [package]
 name = "git-worktree-smart"
-version = "0.1.0+build.2"
+version = "0.1.1"
 edition = "2021"
 description = "A lightweight, human-friendly, and beautiful Git worktree manager"
 license = "MIT"
