@@ -9,7 +9,13 @@ No complex invocation. Just smarter worktrees.
 
 [![Rust](https://img.shields.io/badge/Rust-2021-orange.svg)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Crates.io](https://img.shields.io/badge/Cargo-0.1.0-brightgreen.svg)](Cargo.toml)
+[![Crates.io](https://img.shields.io/crates/v/git-worktree-smart.svg)](https://crates.io/crates/git-worktree-smart)
+
+<br />
+
+<div align="center">
+  <img src="demo.gif" alt="wt in action - Git worktrees made human" width="100%" />
+</div>
 
 </div>
 
@@ -21,28 +27,28 @@ Git worktrees are powerful, but the raw CLI is tedious. Creating a worktree mean
 hand-typing paths and juggling `-b` flags. Removing one can silently destroy
 uncommitted work. `wt` fixes all of that:
 
-- **Zero configuration** — `wt add feature` just works.
-- **Smart path inference** — automatically names and places new worktrees.
-- **Fuzzy matching** — `wt path log` resolves `feature/login`.
-- **Non-destructive by default** — refuses to delete work unless you insist.
-- **Beautiful *and* scriptable** — pretty tables for humans, strict JSON for machines.
+- **Zero configuration** — `wt add feature` just works in any existing Git repository.
+- **Smart path inference** — automatically names and places new worktrees alongside your repo.
+- **Fuzzy matching** — `wt path log` seamlessly resolves `feature/login`.
+- **Non-destructive by default** — guards against dirty states, unpushed commits, and orphaned detached commits.
+- **Beautiful *and* scriptable** — rich, colorful tables for humans; clean, deterministic JSON for tooling.
 
 ---
 
-## ✨ Features
+## ✨ Features & Capabilities
 
-| Command | Description |
-|---------|-------------|
-| `wt` / `wt list` | List every worktree with branch, status, path & commit |
-| `wt add <branch>` | Create a worktree, auto-inferring the path |
-| `wt switch <query>` | Resolve a worktree and print a shell snippet to switch |
-| `wt path <query>` | Print the absolute path (for `cd $(wt path ...)`) |
-| `wt remove <query>` | Safely remove a worktree (guards against data loss) |
-| `wt prune` | Clean stale references — dry-run by default |
+| Command | Alias | Description |
+|---------|-------|-------------|
+| `wt` / `wt list` | `wt ls` | List every worktree with branch, status, path & commit |
+| `wt add <name> [base]` | | Create a worktree with smart path inference and optional tracking |
+| `wt switch <query>` | `wt cd` | Resolve a worktree and switch to it via shell wrapper |
+| `wt path <query>` | | Print absolute path to stdout (perfect for `cd "$(wt path ...)"`) |
+| `wt remove <query>` | `wt rm` | Safely remove a worktree with multi-layer data loss protection |
+| `wt prune` | | Clean stale index references — safe dry-run preview by default |
 
 ### Smart path inference
 
-```
+```bash
 $ wt add feature/login
 ✓ Created worktree for feature/login at ~/repo-feature-login
 ```
@@ -52,40 +58,52 @@ typing out full paths. Slashes are safely converted for the filesystem.
 
 ### Fuzzy matching
 
-```
+```bash
 $ wt path log
 /home/dev/repo-feature-login
 ```
 
 Every query goes through an exact → substring → fuzzy resolution pipeline, so
-`wt path log`, `wt switch logi`, and `wt rm log` all just work.
+`wt path log`, `wt switch logi`, and `wt rm log` all resolve accurately.
 
-### Non-destructive by default
+### Safe by default
 
-```
+```bash
 $ wt remove feature/login
-Error: Worktree at ~/repo-feature-login has uncommitted changes. 💡 Pass --force to delete it anyway.
+Error: Worktree at ~/repo-feature-login has uncommitted changes.
+💡 Pass --force to delete it anyway.
 ```
 
-`remove` and `prune` are guarded: dirty worktrees, unpushed commits, and stale
-references are all surfaced *before* anything destructive happens.
+`wt remove` enforces strict safety guards:
+- **Dirty working trees** with uncommitted changes are protected.
+- **Unpushed commits** ahead of the upstream branch are blocked.
+- **Detached HEAD** commits unreachable from any other branch are protected from becoming orphaned.
+- **The main repository root** and the **currently active worktree** cannot be accidentally removed.
 
 ### Human-friendly *and* scriptable
 
-```bash
+```text
 $ wt list
-┌────────────┬───────────────────┬─────────┬──────────────────────────┬──────────────────┐
-│            │ Branch            │ Status  │ Path                     │ Commit           │
-╞════════════╪═══════════════════╪═════════╪══════════════════════════╪══════════════════╡
-│ *          │ main              │ clean   │ ~/repo                   │ 4d9f1a2 fix bugs  │
-│            │ feature/login     │ ahead 2 │ ~/repo-feature-login     │ 8c3b7d1 add auth   │
-└────────────┴───────────────────┴─────────┴──────────────────────────┴──────────────────┘
+┌───┬───────────────────┬─────────┬──────────────────────────┬──────────────────┐
+│   │ Branch            │ Status  │ Path                     │ Commit           │
+├───┼───────────────────┼─────────┼──────────────────────────┼──────────────────╡
+│ * │ main              │ clean   │ ~/repo                   │ 4d9f1a2 fix bugs │
+│   │ feature/login     │ ahead 2 │ ~/repo-feature-login     │ 8c3b7d1 add auth │
+└───┴───────────────────┴─────────┴──────────────────────────┴──────────────────┘
+```
 
+```bash
 $ wt list --json
 [
   {
     "path": "/home/dev/repo",
     "name": "main",
+    "status": {
+      "clean": true,
+      "dirty": false,
+      "ahead": 0,
+      "behind": 0
+    },
     ...
   }
 ]
@@ -95,6 +113,14 @@ $ wt list --json
 
 ## 📦 Installation
 
+### Via Cargo (Recommended)
+
+```bash
+cargo install git-worktree-smart
+```
+
+This installs the `wt` binary directly to `~/.cargo/bin`.
+
 ### From source
 
 ```bash
@@ -103,11 +129,11 @@ cd git-worktree-smart
 cargo install --path .
 ```
 
-Or build locally:
+Or build the release binary locally:
 
 ```bash
 cargo build --release
-# binary at target/release/wt
+# binary produced at target/release/wt
 ```
 
 ### Requirements
@@ -115,44 +141,48 @@ cargo build --release
 - [Rust](https://www.rust-lang.org/tools/install) 1.60+ (edition 2021)
 - [Git](https://git-scm.com) on your `PATH`
 
-`wt` shells out to the native `git` CLI — no `libgit2` or system libraries required.
+`wt` shells out to the native `git` CLI — no `libgit2` or C system dependencies required.
 
 ---
 
-## 🚀 Quick Start
+## ⚡ Quick Start
+
+Follow the typical developer workflow (as shown in the demo):
 
 ```bash
-# In any Git repository:
-wt                          # list your worktrees
+# 1. View all active worktrees and their sync status:
+wt
 
-# Create a worktree on a new branch:
+# 2. Spin up a new worktree for a feature branch (branch created from HEAD):
 wt add feature/auth
 
-# Create a worktree branching from main:
+# 3. Create a worktree branching from a specific base (e.g. main):
 wt add hotfix main
 
-# Track a remote branch:
+# 4. Create a worktree tracking an existing remote branch:
 wt add deploy --track origin/deploy
 
-# Find and switch to a worktree by fuzzy query:
-wt switch login
+# 5. Jump into a worktree using fuzzy lookup:
+cd "$(wt path auth)"
 
-# Script-friendly path lookup:
-cd "$(wt path feature/auth)"
+# 6. Or switch instantly using the shell integration:
+wt switch auth
 
-# Remove safely, or force:
+# 7. Safely remove a worktree when finished:
 wt remove feature/auth
-wt remove --force feature/auth
 
-# Preview then execute a prune:
-wt prune
-wt prune --yes
+# 8. Clean up stale worktree references from deleted folders:
+wt prune        # preview what would be cleaned up (dry run)
+wt prune -y     # execute the cleanup
 ```
 
-### Shell integration for `wt switch`
+---
 
-Because a child process cannot change the parent shell's directory, add this to
-`~/.zshrc` or `~/.bashrc` to make `wt switch` actually `cd` for you:
+## 🐚 Shell Integration (`wt switch` / `wt cd`)
+
+Because a child process cannot modify the parent shell's working directory, invoking `wt switch` directly in a terminal will resolve and print the path with instructions.
+
+To enable instant directory navigation directly with `wt switch` or `wt cd`, add this wrapper to your `~/.zshrc`, `~/.bashrc`, or shell profile:
 
 ```bash
 wt() {
@@ -161,12 +191,17 @@ wt() {
         if [ "$arg" = "--json" ]; then has_json=true; fi
     done
 
-    if { [ "$1" = "switch" ] || [ "$1" = "cd" ]; } && [ "$has_json" = false ]; then
+    local is_switch=false
+    if [ "$1" = "switch" ] || [ "$1" = "cd" ]; then
+        is_switch=true
+    fi
+
+    if [ "$is_switch" = true ] && [ "$has_json" = false ]; then
         shift
         local target_path
         target_path="$(command wt path "$@")"
         if [ $? -eq 0 ] && [ -n "$target_path" ]; then
-            cd "$target_path"
+            cd -- "$target_path"
         fi
     else
         command wt "$@"
@@ -174,76 +209,75 @@ wt() {
 }
 ```
 
-The wrapper checks for `--json` anywhere in the arguments and, if present, falls
-through to `command wt` instead of trying to `cd` into a JSON string. This keeps
-`wt switch --json <query>` (machine-readable output) safe.
-```
+### Why this wrapper is robust:
+- Seamlessly intercepts both `switch` and `cd` subcommands.
+- Inspects arguments for `--json` and safely passes the command through to `command wt` to avoid corrupting machine output.
+- Resolves paths via `wt path`, which handles exact, substring, and fuzzy matching with error handling.
 
 ---
 
-## 🖥️ Commands
+## 🖥️ Command Reference
 
-### `wt list` (`ls`)
+### `wt list` (alias: `wt ls`)
+Lists all worktrees in the current repository sorted alphabetically.
+- Displays an active indicator (`*`), linked branch, status (clean / dirty / ahead / behind), filesystem path, and short commit hash + message.
+- Running `wt` with no arguments defaults to `wt list`.
 
-Displays all worktrees sorted alphabetically, showing the current worktree with
-a `*`, the linked branch, status (clean / dirty / ahead / behind), path, and the
-latest commit on HEAD.
+### `wt add <name> [base] [--track <remote>] [--path <custom>]`
+Creates a new worktree.
+- `<name>`: The branch and worktree name.
+- `[base]`: Optional starting commit or branch (defaults to `HEAD`). Ignored if the branch already exists.
+- `--track <remote>`: Sets up upstream tracking for an existing remote branch (conflicts with `base`).
+- `-p, --path <custom>`: Overrides the inferred sibling path to place the worktree at a custom directory location.
 
-### `wt add <name> [base] [--track <remote>]`
-
-Creates a new worktree. The path is inferred as a sibling of the repository:
-`<repo-dir>` → `<parent>/<repo-name>-<sanitized-branch>`.
-
-- If the branch exists, it is checked out.
-- If not, it is created from `base` (defaults to `HEAD`).
-- `--track` sets upstream tracking.
-
-### `wt switch <query>`
-
-Resolves a worktree by fuzzy query and prints a shell snippet explaining how to
-switch to it (see Shell integration above). With `--json`, prints the resolved
-worktree.
+### `wt switch <query>` (alias: `wt cd`)
+Resolves a worktree via exact, substring, or fuzzy matching.
+- Designed to work in tandem with the shell integration wrapper for instant `cd`.
+- Multiple words are combined into a single fuzzy query (e.g. `wt switch feat auth`).
 
 ### `wt path <query>`
+Resolves a worktree and writes **only** its absolute path to stdout.
+- Ideal for scripts and subshells: `cd "$(wt path <query>)"`.
+- On failure or ambiguous matches, errors are printed to stderr and the process exits with a non-zero code, preventing subshells from changing into unintended directories.
 
-Prints only the absolute path of a resolved worktree to stdout — safe for shell
-evaluation with `$(...)`. On error, writes to stderr and exits non-zero so the
-shell never `cd`s into garbage.
+### `wt remove <query> [-f, --force]` (alias: `wt rm`)
+Safely removes a worktree and deletes its directory.
+- **Safety guards**: Blocks removal if the worktree contains uncommitted changes, unpushed commits, or unreachable commits on a detached HEAD.
+- **Main & active protection**: Refuses to remove the main repository root or the worktree currently occupied by your shell.
+- `-f, --force`: Overrides uncommitted/unpushed safeguards to force deletion.
 
-### `wt remove <query> [--force]`
-
-Safely removes a worktree. Guards:
-
-- The **main** worktree can never be removed.
-- A **dirty** worktree or one with **unpushed commits** is refused unless `--force`.
-
-### `wt prune [--yes]`
-
-Wraps `git worktree prune` (cleans references to deleted worktrees). By default
-it is a **dry run** showing what would be removed. Pass `--yes` to execute.
+### `wt prune [-y, --yes]`
+Cleans up stale worktree references in `.git/worktrees` whose directories were removed manually.
+- **Safe dry-run by default**: `wt prune` lists the stale entries without deleting them.
+- `-y, --yes`: Executes the prune operation to clean up the index.
 
 ---
 
 ## ⚙️ Global Options
 
-| Option | Description |
-|--------|-------------|
-| `--json` | Machine-readable JSON output for every command |
-| `-v, --verbose` | Show the underlying `git` commands being executed |
-| `-h, --help` | Print help |
-| `-V, --version` | Print version |
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--json` | | Output structured JSON on stdout (for scripts, pipelines, and tools) |
+| `--verbose` | `-v` | Show underlying `git` commands and arguments executed by `wt` |
+| `--help` | `-h` | Print help information |
+| `--version` | `-V` | Print version |
 
 ---
 
-## 🔧 JSON Output
+## 🔧 JSON & Scripting Support
 
-When `--json` is set, output is strictly structured:
+When `--json` is supplied, `wt` guarantees machine-friendly, parseable output:
 
-- **List / prune**: arrays (`[...]`)
-- **Single target** (add / switch / remove): objects (`{...}`)
-- **Errors**: `{"error": "<message>"}` written to **stderr**
+- **List & Prune commands**: JSON arrays (`[...]`)
+- **Single-target operations** (`add`, `switch`, `remove`): JSON objects (`{...}`)
+- **Error output**: JSON errors `{"error": "<message>"}` written strictly to **stderr** with non-zero exit codes.
 
-Errors never corrupt stdout, so `--json` is safe to pipe into tools like `jq`.
+Stdout is kept clean and pipeable into tools like `jq`:
+
+```bash
+# Get the paths of all dirty worktrees
+wt list --json | jq -r '.[] | select(.status.dirty == true) | .path'
+```
 
 ---
 
@@ -251,42 +285,38 @@ Errors never corrupt stdout, so `--json` is safe to pipe into tools like `jq`.
 
 ```
 src/
-├── main.rs          # Entry point, dispatch, global error handler
-├── cli.rs           # clap definitions (branding, flags, examples)
-├── error.rs         # AppError — thiserror, actionable messages
-├── models/          # WorktreeInfo, WorktreeStatus (serde + Display)
+├── main.rs          # Entry point, CLI dispatch, global error formatting
+├── cli.rs           # Clap definitions, command routing, shell integration help
+├── error.rs         # Strongly-typed AppError (thiserror) with actionable hints
+├── models/          # WorktreeInfo & WorktreeStatus domain models (serde + Display)
 ├── git/
-│   ├── command.rs   # Thin wrappers over std::process::Command
-│   ├── ops.rs       # Mutating operations (add / remove / prune)
-│   ├── parse.rs     # Pure parsers for git output (unit-tested)
-│   └── resolve.rs   # Exact → substring → fuzzy worktree resolution
-├── cmd/             # One module per subcommand
-└── output/          # human (comfy-table + owo-colors) and JSON renderers
+│   ├── command.rs   # Process execution wrappers with verbose tracing
+│   ├── ops.rs       # Mutating Git operations (add, remove, prune)
+│   ├── parse.rs     # Pure parsers for porcelain worktree & status output
+│   └── resolve.rs   # Exact → substring → fuzzy worktree resolution engine
+├── cmd/             # Modular subcommand implementations (list, add, switch, path, remove, prune)
+└── output/          # Human-friendly tables (comfy-table + owo-colors) & JSON serializers
 ```
-
-The design favors **small, tested, pure functions** for parsing, and thin shell
-invocations for anything that touches Git.
 
 ---
 
-## 🧪 Testing
+## 🧪 Testing & Quality
 
 ```bash
-cargo test         # unit + integration tests
-cargo clippy       # lint (zero warnings)
+cargo test         # Run unit and integration test suite
+cargo clippy       # Run linter checks
 ```
 
 Test coverage includes:
-
-- Parsing `git worktree list --porcelain` (incl. detached HEAD, multiple, bare)
-- Dirty / ahead / behind status detection
-- Prune dry-run parsing (both older and modern git output formats)
-- Worktree path sanitization and inference
-- Exact / substring / fuzzy resolution with ambiguity detection
-- Black-box CLI tests (`assert_cmd`) for JSON, aliases, errors, and round-trips
+- Parsing `git worktree list --porcelain` across standard, bare, and detached HEAD configurations.
+- Dirty, ahead, and behind state detection.
+- Prune dry-run parsing across Git versions.
+- Worktree path sanitization and collision prevention.
+- Exact, substring, and fuzzy matching with ambiguity detection.
+- End-to-end integration tests (`assert_cmd`) verifying CLI flags, JSON output, and safety invariants.
 
 ---
 
 ## 📄 License
 
-[MIT](LICENSE)
+Distributed under the [MIT](LICENSE) License.
