@@ -89,7 +89,11 @@ pub enum Commands {
             switch with the path command: `cd $(wt path feature/auth)`.\n\
             For instant switching, add this wrapper to ~/.zshrc or ~/.bashrc:\n\n\
             wt() {\n\
-                if [ \"$1\" = \"switch\" ] || [ \"$1\" = \"cd\" ]; then\n\
+                local has_json=false\n\
+                for arg in \"$@\"; do\n\
+                    if [ \"$arg\" = \"--json\" ]; then has_json=true; fi\n\
+                done\n\n\
+                if { [ \"$1\" = \"switch\" ] || [ \"$1\" = \"cd\" ]; } && [ \"$has_json\" = false ]; then\n\
                     shift\n\
                     local target_path\n\
                     target_path=\"$(command wt path \"$@\")\"\n\

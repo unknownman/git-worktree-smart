@@ -58,34 +58,43 @@ pub fn resolve_from_worktrees(
         });
     }
 
-    // 3. Path resolution: if the query can be canonicalized to an absolute path
-    // (e.g. `.`, `..`, or a relative dir), find the worktree that encloses it.
-    // When run from a subdirectory, the query canonicalizes to a nested path, so
-    // we match with `starts_with` and select the longest matching worktree (if
-    // multiple nest) to pick the most specific one.
+    // 3. Path resolution: if the query *looks like* a path (an explicit `.`,
+    // `..`, or a separator-containing string), canonicalize it to an absolute
+    // path and find the worktree that encloses it. When run from a subdirectory,
+    // the query canonicalizes to a nested path, so we match with `starts_with`
+    // and select the longest matching worktree (if multiple nest) to pick the
+    // most specific one.
     //
-    // This runs AFTER exact and substring matching on purpose: a query like
+    // Guarding on `is_path_like` is essential: a plain word like `src` or `test`
+    // should fall through to the fuzzy matcher below, even if a local folder of
+    // that name happens to exist in the current directory. Only queries that
+    // explicitly reference a path get canonicalized; otherwise a local directory
+    // would silently shadow a same-named branch worktree.
+    //
+    // This also runs AFTER exact and substring matching on purpose: a query like
     // `main` must match a branch/worktree named `main` first, even if a local
-    // folder also named `main` happens to exist in the current worktree —
-    // otherwise a local directory would shadow a same-named branch worktree.
-    if let Ok(query_canon) = dunce::canonicalize(query) {
-        let mut best: Option<(usize, &WorktreeInfo)> = None;
-        for wt in worktrees {
-            if let Ok(wt_canon) = dunce::canonicalize(&wt.path) {
-                if query_canon.starts_with(&wt_canon) {
-                    // Prefer the worktree whose root is deepest along the path.
-                    if let Some((best_len, _)) = best {
-                        if wt_canon.as_os_str().len() > best_len {
+    // folder also named `main` happens to exist in the current worktree.
+    let is_path_like = query == "." || query == ".." || query.contains('/') || query.contains('\\');
+    if is_path_like {
+        if let Ok(query_canon) = dunce::canonicalize(query) {
+            let mut best: Option<(usize, &WorktreeInfo)> = None;
+            for wt in worktrees {
+                if let Ok(wt_canon) = dunce::canonicalize(&wt.path) {
+                    if query_canon.starts_with(&wt_canon) {
+                        // Prefer the worktree whose root is deepest along the path.
+                        if let Some((best_len, _)) = best {
+                            if wt_canon.as_os_str().len() > best_len {
+                                best = Some((wt_canon.as_os_str().len(), wt));
+                            }
+                        } else {
                             best = Some((wt_canon.as_os_str().len(), wt));
                         }
-                    } else {
-                        best = Some((wt_canon.as_os_str().len(), wt));
                     }
                 }
             }
-        }
-        if let Some((_, wt)) = best {
-            return Ok(wt.clone());
+            if let Some((_, wt)) = best {
+                return Ok(wt.clone());
+            }
         }
     }
 
@@ -391,6 +400,47 @@ mod tests {
         with_cwd(&cur_wt, || {
             let result = resolve_from_worktrees(&worktrees, "main").unwrap();
             assert_eq!(result.name, "main");
+        });
+    }
+
+    #[test]
+    fn test_plain_word_falls_through_to_fuzzy_even_with_local_dir() {
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let cur_wt = dir.path().join("repo");
+        // A local folder named `src` exists inside the current worktree, so
+        // `canonicalize("src")` would succeed from that directory.
+        let local = cur_wt.join("src");
+        std::fs::create_dir_all(&local).expect("create local src folder");
+
+        let search_wt = dir.path().join("search-wt");
+        std::fs::create_dir_all(&search_wt).expect("create search worktree");
+
+        let worktrees = vec![
+            WorktreeInfo {
+                path: cur_wt.clone(),
+                name: "repo".to_owned(),
+                branch: Some("repo".to_owned()),
+                head_hash: "abc1234".to_owned(),
+                head_msg: "msg".to_owned(),
+                status: WorktreeStatus::clean(),
+            },
+            WorktreeInfo {
+                path: search_wt.clone(),
+                name: "search".to_owned(),
+                branch: Some("feature/search".to_owned()),
+                head_hash: "abcd123".to_owned(),
+                head_msg: "msg".to_owned(),
+                status: WorktreeStatus::clean(),
+            },
+        ];
+
+        // Because `src` is a plain word (no separators, not `.`/`..`), it is not
+        // treated as a path. Even though a local `src` folder exists in the cwd,
+        // the resolver must fall through to the fuzzy matcher and pick `search`
+        // rather than short-circuiting to the enclosing worktree.
+        with_cwd(&cur_wt, || {
+            let result = resolve_from_worktrees(&worktrees, "src").unwrap();
+            assert_eq!(result.name, "search");
         });
     }
 }

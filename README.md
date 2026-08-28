@@ -156,7 +156,12 @@ Because a child process cannot change the parent shell's directory, add this to
 
 ```bash
 wt() {
-    if [ "$1" = "switch" ] || [ "$1" = "cd" ]; then
+    local has_json=false
+    for arg in "$@"; do
+        if [ "$arg" = "--json" ]; then has_json=true; fi
+    done
+
+    if { [ "$1" = "switch" ] || [ "$1" = "cd" ]; } && [ "$has_json" = false ]; then
         shift
         local target_path
         target_path="$(command wt path "$@")"
@@ -167,6 +172,11 @@ wt() {
         command wt "$@"
     fi
 }
+```
+
+The wrapper checks for `--json` anywhere in the arguments and, if present, falls
+through to `command wt` instead of trying to `cd` into a JSON string. This keeps
+`wt switch --json <query>` (machine-readable output) safe.
 ```
 
 ---
