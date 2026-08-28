@@ -2,12 +2,26 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::error::AppError;
-use crate::git::command::{get_git_common_dir, run_git, run_git_status, run_git_stderr};
+use crate::git::command::{
+    get_git_common_dir, get_main_worktree_root, run_git, run_git_status, run_git_stderr,
+};
 use crate::models::{WorktreeInfo, WorktreeStatus};
 
 pub fn get_worktrees(verbose: bool) -> Result<Vec<WorktreeInfo>, AppError> {
     let output = run_git(&["worktree", "list", "--porcelain"], None, verbose)?;
     let mut worktrees = parse_worktree_list(&output);
+
+    // Git reports a submodule's main worktree as its bare gitdir (e.g.
+    // `/repo/.git/modules/sub`), not the actual checkout directory. Patch the
+    // first entry — which is always the main worktree — with the true root, so
+    // `wt list` displays the real path and the status/head threads below run
+    // `git status` in the actual checkout rather than the bare directory.
+    if let Some(main_wt) = worktrees.first_mut() {
+        if let Ok(true_root) = get_main_worktree_root(verbose) {
+            main_wt.path = true_root;
+            main_wt.name = derive_name(&main_wt.path, main_wt.branch.as_deref());
+        }
+    }
 
     // Fetch the head message and status for every worktree. Each spawns several
     // git subprocesses, so a little parallelism avoids a long serial stall. To
@@ -258,45 +272,13 @@ fn get_ahead_behind(cwd: &Path, verbose: bool) -> Result<(u32, u32), AppError> {
         return Ok(parse_rev_list_count(&output));
     }
 
-    // No upstream tracking is configured. Fall back to comparing HEAD against a
-    // likely default/base branch so local commits are still surfaced instead of
-    // silently reporting the worktree as "clean". Candidates are tried in order:
-    // the remote HEAD pointer, then common local and remote default branches.
-    let candidates = [
-        "refs/remotes/origin/HEAD",
-        "refs/heads/main",
-        "refs/heads/master",
-        "refs/heads/develop",
-        "refs/remotes/origin/main",
-        "refs/remotes/origin/master",
-        "refs/remotes/origin/develop",
-    ];
-
-    for base in candidates {
-        // Resolve the base ref; skip it if it does not exist in this repo.
-        let exists = run_git_status(
-            &["rev-parse", "--verify", "--quiet", base],
-            Some(cwd),
-            verbose,
-        );
-        if !exists.map(|s| s.success).unwrap_or(false) {
-            continue;
-        }
-
-        // Count commits reachable from HEAD but not from the base branch.
-        let Ok(output) = run_git(
-            &["rev-list", "--count", "HEAD", &format!("^{base}")],
-            Some(cwd),
-            verbose,
-        ) else {
-            continue;
-        };
-        let ahead = output.trim().parse::<u32>().unwrap_or(0);
-        return Ok((ahead, 0));
-    }
-
-    // No upstream and no recognizable default branch. Treat as having nothing
-    // ahead/behind rather than failing the whole command.
+    // No upstream tracking is configured. Do not invent a base branch to compare
+    // against: comparing HEAD to a hardcoded default like `main`/`develop` would
+    // falsely report a branch created off `develop` as "ahead 50", breaking the
+    // `wt list` UI and tripping the `UnpushedCommits` guard in `wt remove`. Local
+    // branches without an upstream simply report as clean (0 ahead, 0 behind);
+    // true data loss for detached HEADs is already prevented separately by
+    // `is_commit_merged_or_reachable`.
     Ok((0, 0))
 }
 
