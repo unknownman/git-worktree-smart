@@ -207,6 +207,13 @@ pub fn check_remote_branch_exists(branch_name: &str, verbose: bool) -> Result<bo
     // Each line is `<remote>/<branch...>` (e.g. `origin/feature/login`);
     // compare the branch portion (after the first `/`) to the looked-up name.
     Ok(output.lines().any(|line| {
+        // Skip the symbolic remote HEAD ref (e.g. `origin/HEAD`), which merely
+        // points at the remote's default branch. It must never be treated as a
+        // branch literally named "HEAD", or `check_remote_branch_exists("head")`
+        // would wrongly succeed on every repo with a configured remote.
+        if line.ends_with("/HEAD") {
+            return false;
+        }
         line.split_once('/')
             .map(|(_, branch)| branch == branch_name)
             .unwrap_or(false)

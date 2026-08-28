@@ -65,10 +65,7 @@ pub fn remove_worktree(verbose: bool, path: &Path, force: bool) -> Result<(), Ap
         args.push("--force");
     }
 
-    let path_str = path.to_str().ok_or_else(|| AppError::PathInferenceFailed {
-        reason: format!("path contains non-UTF-8 characters: {}", path.display()),
-    })?;
-    args.push(path_str);
+    args.push(path_str(path)?);
 
     run_git(&args, None, verbose)?;
     Ok(())

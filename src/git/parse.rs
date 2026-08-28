@@ -2,9 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::error::AppError;
-use crate::git::command::{
-    get_git_common_dir, get_main_worktree_root, run_git, run_git_status, run_git_stderr,
-};
+use crate::git::command::{get_git_common_dir, run_git, run_git_status, run_git_stderr};
 use crate::models::{WorktreeInfo, WorktreeStatus};
 
 pub fn get_worktrees(verbose: bool) -> Result<Vec<WorktreeInfo>, AppError> {
@@ -16,10 +14,25 @@ pub fn get_worktrees(verbose: bool) -> Result<Vec<WorktreeInfo>, AppError> {
     // first entry — which is always the main worktree — with the true root, so
     // `wt list` displays the real path and the status/head threads below run
     // `git status` in the actual checkout rather than the bare directory.
+    //
+    // We detect the case by checking whether the already-parsed main-worktree
+    // path falls inside the git common directory, then resolving the true root
+    // with `--show-toplevel`. This avoids spawning a second `git worktree list`
+    // subprocess — the first-worktree path is already in hand above.
     if let Some(main_wt) = worktrees.first_mut() {
-        if let Ok(true_root) = get_main_worktree_root(verbose) {
-            main_wt.path = true_root;
-            main_wt.name = derive_name(&main_wt.path, main_wt.branch.as_deref());
+        if let Ok(common_dir) = get_git_common_dir(verbose) {
+            if main_wt.path.starts_with(&common_dir) {
+                if let Ok(toplevel) = run_git(
+                    &["rev-parse", "--show-toplevel"],
+                    Some(&main_wt.path),
+                    verbose,
+                ) {
+                    if let Ok(canon) = dunce::canonicalize(&toplevel) {
+                        main_wt.path = canon;
+                        main_wt.name = derive_name(&main_wt.path, main_wt.branch.as_deref());
+                    }
+                }
+            }
         }
     }
 
