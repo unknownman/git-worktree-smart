@@ -8,7 +8,7 @@ authors = ["Ali Joder <ali.masoudi.alavi@gmail.com>"]
 repository = "https://github.com/unknownman/git-worktree-smart"
 readme = "README.md"
 keywords = ["git", "worktree", "cli", "productivity", "git-tools"]
-categories = ["command-line-utilities", "development-tools::git"]
+categories = ["command-line-utilities", "development-tools"]
 default-run = "wt"
 
 [[bin]]
