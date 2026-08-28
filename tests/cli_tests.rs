@@ -334,7 +334,7 @@ fn path_prints_only_path_with_no_whitespace_or_ansi() {
     let stdout = String::from_utf8(out.stdout).expect("utf8");
     // `canonicalize` resolves the temp-dir symlink on macOS, so compare against
     // the canonicalized path rather than the raw temp dir path.
-    let expected = std::fs::canonicalize(&linked)
+    let expected = dunce::canonicalize(&linked)
         .unwrap_or_else(|_| linked.clone())
         .to_string_lossy()
         .into_owned();
@@ -426,7 +426,7 @@ fn test_subcommand_from_nested_subdirectory() {
 
     let stdout = String::from_utf8(out.stdout).expect("utf8");
     let resolved = stdout.trim();
-    let expected = std::fs::canonicalize(&root).expect("canonicalize root");
+    let expected = dunce::canonicalize(&root).expect("canonicalize root");
     assert_eq!(
         std::path::Path::new(resolved),
         expected.as_path(),
@@ -476,10 +476,10 @@ fn test_case_insensitive_substring_and_short_query_resolution() {
 
     // Compute the inferred sibling paths and canonicalize for robustness on
     // symlinked file systems (e.g. /tmp -> /private/tmp on macOS).
-    let login_path = std::fs::canonicalize(root.join(sibling_name(&root, "feature-login")))
+    let login_path = dunce::canonicalize(root.join(sibling_name(&root, "feature-login")))
         .expect("canonicalize login path");
-    let api_path = std::fs::canonicalize(root.join(sibling_name(&root, "api")))
-        .expect("canonicalize api path");
+    let api_path =
+        dunce::canonicalize(root.join(sibling_name(&root, "api"))).expect("canonicalize api path");
 
     // Uppercase substring query must match case-insensitively.
     let out = wt()
@@ -774,7 +774,7 @@ fn test_add_with_relative_path_canonicalizes_cleanly() {
     assert!(nested.is_dir(), "worktree not created at nested path");
 
     // `wt add` (and `wt list`) should report the canonicalized absolute path.
-    let expected = std::fs::canonicalize(&nested).expect("canonicalize nested path");
+    let expected = dunce::canonicalize(&nested).expect("canonicalize nested path");
 
     let mut list = wt();
     let out = list

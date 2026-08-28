@@ -53,7 +53,7 @@ fn dispatch(cli: &Cli, ctx: &Context) -> Result<(), AppError> {
         Some(Commands::Remove { target, force }) => {
             cmd::remove::run(ctx, &target.join(" "), *force)
         }
-        Some(Commands::Prune { yes }) => cmd::clean::run(ctx, *yes),
+        Some(Commands::Prune { yes }) => cmd::prune::run(ctx, *yes),
         Some(Commands::Path { target }) => cmd::path::run(ctx, &target.join(" ")),
     }
 }

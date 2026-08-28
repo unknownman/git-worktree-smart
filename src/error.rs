@@ -56,7 +56,7 @@ pub enum AppError {
     #[error("Branch `{branch}` is already checked out at `{path}`.")]
     BranchAlreadyCheckedOut { branch: String, path: PathBuf },
 
-    #[error("Cannot create worktree: a file or directory already exists at `{path}`.")]
+    #[error("Cannot create worktree: a file or directory already exists at `{path}`. 💡 If this is a leftover from a deleted worktree, run `wt prune` to clean it up first.")]
     PathAlreadyExists { path: PathBuf },
 
     #[error("Cannot create worktree in an empty repository. Please make an initial commit first.")]

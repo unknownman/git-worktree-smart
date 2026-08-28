@@ -143,13 +143,13 @@ pub fn get_main_worktree_root(verbose: bool) -> Result<PathBuf, AppError> {
         return get_current_worktree_root(verbose);
     }
 
-    std::fs::canonicalize(&reported).map_err(AppError::Io)
+    dunce::canonicalize(&reported).map_err(AppError::Io)
 }
 
 /// Return the canonicalized root of the *current* worktree (`--show-toplevel`).
 fn get_current_worktree_root(verbose: bool) -> Result<PathBuf, AppError> {
     let toplevel = run_git(&["rev-parse", "--show-toplevel"], None, verbose)?;
-    std::fs::canonicalize(&toplevel).map_err(AppError::Io)
+    dunce::canonicalize(&toplevel).map_err(AppError::Io)
 }
 
 /// Returns `true` if `path` equals or is a descendant of `ancestor`.
@@ -179,7 +179,7 @@ pub fn get_git_common_dir(verbose: bool) -> Result<PathBuf, AppError> {
         path = cwd.join(path);
     }
 
-    std::fs::canonicalize(&path).map_err(AppError::Io)
+    dunce::canonicalize(&path).map_err(AppError::Io)
 }
 
 pub fn check_branch_exists(branch_name: &str, verbose: bool) -> Result<bool, AppError> {

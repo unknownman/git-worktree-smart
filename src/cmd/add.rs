@@ -56,7 +56,7 @@ pub fn run(
             } else {
                 std::env::current_dir()?.join(p)
             };
-            match std::fs::canonicalize(&abs) {
+            match dunce::canonicalize(&abs) {
                 Ok(canon) => canon,
                 Err(_) => abs,
             }
@@ -106,7 +106,7 @@ pub fn run(
     // `target_path` could not be canonicalized before the directory existed.
     // Re-canonicalize now that the worktree exists so the reported path matches
     // `wt list` (e.g. macOS resolves `/tmp` -> `/private/tmp`).
-    let final_path = std::fs::canonicalize(&target_path).unwrap_or_else(|_| target_path.clone());
+    let final_path = dunce::canonicalize(&target_path).unwrap_or_else(|_| target_path.clone());
 
     // Build the worktree's completion info from the known path + branch with a
     // single HEAD query — no need to re-scan every worktree in the repository.

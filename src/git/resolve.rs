@@ -30,10 +30,10 @@ pub fn resolve_from_worktrees(
     // encloses it. When run from a subdirectory, the query canonicalizes to a
     // nested path, so we match with `starts_with` and select the longest
     // matching worktree (if multiple nest) to pick the most specific one.
-    if let Ok(query_canon) = std::fs::canonicalize(query) {
+    if let Ok(query_canon) = dunce::canonicalize(query) {
         let mut best: Option<(usize, &WorktreeInfo)> = None;
         for wt in worktrees {
-            if let Ok(wt_canon) = std::fs::canonicalize(&wt.path) {
+            if let Ok(wt_canon) = dunce::canonicalize(&wt.path) {
                 if query_canon.starts_with(&wt_canon) {
                     // Prefer the worktree whose root is deepest along the path.
                     if let Some((best_len, _)) = best {

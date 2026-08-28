@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use comfy_table::presets::UTF8_FULL_CONDENSED;
+use comfy_table::presets::NOTHING;
 use comfy_table::{ContentArrangement, Table};
 use owo_colors::OwoColorize;
 
@@ -14,7 +14,7 @@ pub fn print_list(worktrees: &[WorktreeInfo], current_path: Option<&Path>) {
 
     let mut table = Table::new();
     table
-        .load_preset(UTF8_FULL_CONDENSED)
+        .load_preset(NOTHING)
         .set_content_arrangement(ContentArrangement::Dynamic)
         .set_header(["", "Branch", "Status", "Path", "Commit"]);
 
@@ -84,15 +84,13 @@ fn format_path(wt: &WorktreeInfo) -> String {
 
 fn shorten_home(path: &Path) -> String {
     if let Some(home) = dirs::home_dir() {
-        // Windows may prefix absolute paths with the `\\?\` UNC wrapper; strip
-        // it so the `~/` shortening still matches cleanly.
-        let raw = path.to_string_lossy();
-        let raw = raw.strip_prefix(r"\\?\").unwrap_or(&raw);
-
         // Use `Path::strip_prefix` (component-aware) so a path like
         // `/home/developer/repo` is never mistaken for being under
         // `/home/dev`, which a naive string prefix would wrongly do.
-        if let Ok(rest) = Path::new(raw).strip_prefix(&home) {
+        //
+        // Note: `dunce::canonicalize` strips the Windows `\\?\` UNC wrapper at
+        // the source, so no manual stripping is needed here.
+        if let Ok(rest) = path.strip_prefix(&home) {
             return format!("~/{}", rest.display());
         }
     }

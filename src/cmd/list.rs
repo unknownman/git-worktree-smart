@@ -24,9 +24,9 @@ pub fn run(ctx: &Context) -> Result<(), AppError> {
         // Canonicalize both sides so symlink mismatches (e.g. /tmp vs
         // /private/tmp) don't defeat the active-worktree indicator.
         let toplevel_canon =
-            std::fs::canonicalize(toplevel_path).unwrap_or_else(|_| toplevel_path.to_path_buf());
+            dunce::canonicalize(toplevel_path).unwrap_or_else(|_| toplevel_path.to_path_buf());
         worktrees.iter().position(|wt| {
-            let wt_canon = std::fs::canonicalize(&wt.path).unwrap_or_else(|_| wt.path.clone());
+            let wt_canon = dunce::canonicalize(&wt.path).unwrap_or_else(|_| wt.path.clone());
             wt_canon == toplevel_canon
         })
     });

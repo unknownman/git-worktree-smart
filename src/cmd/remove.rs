@@ -20,8 +20,8 @@ pub fn run(ctx: &Context, target: &str, force: bool) -> Result<(), AppError> {
     // be a file rather than a directory.
     let main_root = git::get_main_worktree_root(ctx.verbose)?;
     let is_main_worktree = match (
-        std::fs::canonicalize(&info.path),
-        std::fs::canonicalize(&main_root),
+        dunce::canonicalize(&info.path),
+        dunce::canonicalize(&main_root),
     ) {
         (Ok(info_canon), Ok(root_canon)) => info_canon == root_canon,
         // If either path cannot be canonicalized, fall back to a direct
@@ -37,12 +37,8 @@ pub fn run(ctx: &Context, target: &str, force: bool) -> Result<(), AppError> {
     // triggers confusing Git errors.
     let active = std::env::current_dir()
         .ok()
-        .and_then(|cwd| std::fs::canonicalize(&cwd).ok())
-        .and_then(|cwd_canon| {
-            std::fs::canonicalize(&info.path)
-                .ok()
-                .map(|p| (cwd_canon, p))
-        })
+        .and_then(|cwd| dunce::canonicalize(&cwd).ok())
+        .and_then(|cwd_canon| dunce::canonicalize(&info.path).ok().map(|p| (cwd_canon, p)))
         .filter(|(cwd_canon, path_canon)| cwd_canon.starts_with(path_canon))
         .is_some();
     if active {
