@@ -86,9 +86,14 @@ pub fn run(
         remote_branch_exists,
     )?;
 
+    // `target_path` could not be canonicalized before the directory existed.
+    // Re-canonicalize now that the worktree exists so the reported path matches
+    // `wt list` (e.g. macOS resolves `/tmp` -> `/private/tmp`).
+    let final_path = std::fs::canonicalize(&target_path).unwrap_or_else(|_| target_path.clone());
+
     // Build the worktree's completion info from the known path + branch with a
     // single HEAD query — no need to re-scan every worktree in the repository.
-    let info = git::get_worktree_info(&target_path, Some(name), ctx.verbose)?;
+    let info = git::get_worktree_info(&final_path, Some(name), ctx.verbose)?;
 
     if ctx.json {
         output::json::print_single(&info)?;

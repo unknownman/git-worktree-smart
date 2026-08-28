@@ -87,6 +87,11 @@ pub fn resolve_from_worktrees(
     // 3. Fuzzy match
     let matcher = SkimMatcherV2::default();
 
+    // Scores below this floor are too weak to trust as a match (e.g. a single
+    // arbitrary matching character), so we refuse them rather than surfacing an
+    // unrelated worktree.
+    const MIN_FUZZY_SCORE: i64 = 40;
+
     let mut scored: Vec<(i64, &WorktreeInfo)> = worktrees
         .iter()
         .filter_map(|wt| {
@@ -101,7 +106,8 @@ pub fn resolve_from_worktrees(
                 (None, Some(b)) => Some(b),
                 (None, None) => None,
             };
-            best.map(|s| (s, wt))
+            // Only keep candidates whose best score clears the confidence floor.
+            best.filter(|&s| s >= MIN_FUZZY_SCORE).map(|s| (s, wt))
         })
         .collect();
 
@@ -223,6 +229,40 @@ mod tests {
             AppError::MultipleWorktreesMatch { query } => assert_eq!(query, "f/l"),
             other => panic!("expected MultipleWorktreesMatch, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_low_scoring_fuzzy_query_returns_not_found() {
+        // "xyz" shares no meaningful prefix/sequence with any mock worktree
+        // name or branch; any fuzzy score it produces must fall below the
+        // confidence floor and be rejected.
+        let result = resolve_from_worktrees(&mock_worktrees(), "xyz");
+        match result {
+            Err(AppError::WorktreeNotFound { query }) => assert_eq!(query, "xyz"),
+            other => panic!("expected WorktreeNotFound, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_weak_fuzzy_query_returns_not_found() {
+        // "li" is not a substring of any mock name or branch (so it bypasses
+        // substring matching), but it does score against "feature/login" at ~34
+        // — below the confidence floor. It must be rejected as not found rather
+        // than falsely matching the worktree.
+        let result = resolve_from_worktrees(&mock_worktrees(), "li");
+        assert!(
+            matches!(result, Err(AppError::WorktreeNotFound { .. })),
+            "expected WorktreeNotFound, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_random_low_relevance_query_returns_not_found() {
+        let result = resolve_from_worktrees(&mock_worktrees(), "qzxv");
+        assert!(
+            matches!(result, Err(AppError::WorktreeNotFound { .. })),
+            "expected WorktreeNotFound, got {result:?}"
+        );
     }
 
     #[test]

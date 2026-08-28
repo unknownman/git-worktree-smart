@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::error::AppError;
-use crate::git::command::{get_repo_root, run_git, run_git_stderr};
+use crate::git::command::{get_repo_root, run_git, run_git_status, run_git_stderr};
 use crate::models::{WorktreeInfo, WorktreeStatus};
 
 pub fn get_worktrees(verbose: bool) -> Result<Vec<WorktreeInfo>, AppError> {
@@ -215,23 +215,73 @@ fn check_dirty(cwd: &Path, verbose: bool) -> Result<bool, AppError> {
 }
 
 fn get_ahead_behind(cwd: &Path, verbose: bool) -> Result<(u32, u32), AppError> {
+    // A detached HEAD has no branch to compare against, and its uncommitted-to-a-
+    // branch commits are safety-checked separately by the caller (the detached-
+    // HEAD reachability guard in `wt remove`). Reporting an "ahead" count here
+    // would shadow that more specific safety path, so treat it as having no
+    // upstream status.
+    let symbolic_ref = run_git_status(
+        &["symbolic-ref", "--quiet", "--short", "HEAD"],
+        Some(cwd),
+        verbose,
+    );
+    if !symbolic_ref.map(|s| s.success).unwrap_or(false) {
+        return Ok((0, 0));
+    }
+
     let upstream_check = run_git(
         &["rev-parse", "--verify", "--quiet", "@{u}"],
         Some(cwd),
         verbose,
     );
 
-    if upstream_check.is_err() {
-        return Ok((0, 0));
+    if upstream_check.is_ok() {
+        let output = run_git(
+            &["rev-list", "--left-right", "--count", "HEAD...@{u}"],
+            Some(cwd),
+            verbose,
+        )?;
+        return Ok(parse_rev_list_count(&output));
     }
 
-    let output = run_git(
-        &["rev-list", "--left-right", "--count", "HEAD...@{u}"],
-        Some(cwd),
-        verbose,
-    )?;
+    // No upstream tracking is configured. Fall back to comparing HEAD against a
+    // likely default/base branch so local commits are still surfaced instead of
+    // silently reporting the worktree as "clean". Candidates are tried in order:
+    // the remote HEAD pointer, then common local and remote default branches.
+    let candidates = [
+        "refs/remotes/origin/HEAD",
+        "refs/heads/main",
+        "refs/heads/master",
+        "refs/remotes/origin/main",
+        "refs/remotes/origin/master",
+    ];
 
-    Ok(parse_rev_list_count(&output))
+    for base in candidates {
+        // Resolve the base ref; skip it if it does not exist in this repo.
+        let exists = run_git_status(
+            &["rev-parse", "--verify", "--quiet", base],
+            Some(cwd),
+            verbose,
+        );
+        if !exists.map(|s| s.success).unwrap_or(false) {
+            continue;
+        }
+
+        // Count commits reachable from HEAD but not from the base branch.
+        let Ok(output) = run_git(
+            &["rev-list", "--count", "HEAD", &format!("^{base}")],
+            Some(cwd),
+            verbose,
+        ) else {
+            continue;
+        };
+        let ahead = output.trim().parse::<u32>().unwrap_or(0);
+        return Ok((ahead, 0));
+    }
+
+    // No upstream and no recognizable default branch. Treat as having nothing
+    // ahead/behind rather than failing the whole command.
+    Ok((0, 0))
 }
 
 pub fn sanitize_branch_name(branch: &str) -> String {
