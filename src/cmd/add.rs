@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use crate::error::AppError;
 use crate::git;
 use crate::git::command::{check_branch_exists, check_remote_branch_exists, get_repo_root};
@@ -11,9 +13,39 @@ pub fn run(
     name: &str,
     base: Option<&str>,
     track: Option<&str>,
+    path: Option<&Path>,
 ) -> Result<(), AppError> {
     let repo_root = get_repo_root(ctx.verbose)?;
-    let target_path = infer_worktree_path(&repo_root, name)?;
+
+    // An empty repository (no commits) cannot back a linked worktree. Detect it
+    // up front and return a clean, actionable error instead of a raw git fatal
+    // ("invalid reference: HEAD").
+    let has_commits = crate::git::command::run_git_status(
+        &["rev-parse", "--verify", "--quiet", "HEAD"],
+        None,
+        ctx.verbose,
+    )?
+    .success;
+    if !has_commits {
+        return Err(AppError::EmptyRepository);
+    }
+
+    let target_path = match path {
+        Some(p) => {
+            // Normalize relative paths against the current working directory and
+            // canonicalize to collapse `.`/`..` and symlinks.
+            let abs = if p.is_absolute() {
+                p.to_path_buf()
+            } else {
+                std::env::current_dir()?.join(p)
+            };
+            match std::fs::canonicalize(&abs) {
+                Ok(canon) => canon,
+                Err(_) => abs,
+            }
+        }
+        None => infer_worktree_path(&repo_root, name)?,
+    };
 
     if target_path.exists() {
         return Err(AppError::PathAlreadyExists { path: target_path });

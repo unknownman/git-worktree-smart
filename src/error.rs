@@ -59,6 +59,9 @@ pub enum AppError {
     #[error("Cannot create worktree: a file or directory already exists at `{path}`.")]
     PathAlreadyExists { path: PathBuf },
 
+    #[error("Cannot create worktree in an empty repository. Please make an initial commit first.")]
+    EmptyRepository,
+
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }

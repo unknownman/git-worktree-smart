@@ -191,15 +191,16 @@ pub fn check_remote_branch_exists(branch_name: &str, verbose: bool) -> Result<bo
     }))
 }
 
-/// Returns `true` if the given commit is reachable from at least one branch
-/// (i.e. is merged into any branch head).
+/// Returns `true` if the given commit is reachable from at least one local or
+/// remote branch (i.e. is merged into any branch head, or pushed to a remote
+/// tracking branch).
 ///
 /// This is used to detect detached-HEAD worktrees whose commits would become
 /// orphaned (unreachable) and lost if the worktree is deleted without `--force`.
 ///
-/// Uses `git for-each-ref --contains <hash> refs/heads` (rather than
-/// `git branch --contains`, which also emits a detached-HEAD marker line even
-/// when no real branch contains the commit) so only actual branch refs count.
+/// Uses `git for-each-ref --contains <hash>` across both `refs/heads` (local)
+/// and `refs/remotes` (remote tracking) so that commits pushed to a remote but
+/// not yet merged into a local branch are still considered reachable.
 pub fn is_commit_merged_or_reachable(
     hash: &str,
     cwd: &Path,
@@ -209,10 +210,16 @@ pub fn is_commit_merged_or_reachable(
         // No commits yet: nothing can be orphaned.
         return Ok(true);
     }
-    // List every branch ref that contains the commit; non-empty means it is
-    // reachable from at least one branch.
+    // List every local or remote branch ref that contains the commit;
+    // non-empty means it is reachable from at least one branch.
     let output = run_git(
-        &["for-each-ref", "--contains", hash, "refs/heads"],
+        &[
+            "for-each-ref",
+            "--contains",
+            hash,
+            "refs/heads",
+            "refs/remotes",
+        ],
         Some(cwd),
         verbose,
     )?;

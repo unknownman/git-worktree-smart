@@ -126,6 +126,53 @@ fn add_creates_worktree_and_list_round_trips() {
 }
 
 #[test]
+fn add_in_empty_repo_returns_clean_error() {
+    let (_dir, mut cmd) = repo();
+    cmd.arg("add")
+        .arg("feature/login")
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "Cannot create worktree in an empty repository",
+        ));
+}
+
+#[test]
+fn add_custom_path_creates_worktree_at_that_path() {
+    let (dir, _cmd) = repo();
+    let root = dir.path().to_path_buf();
+    init_repo_with_commit(&root);
+
+    // Create the worktree at an explicit custom path (a sibling directory),
+    // distinct from the automatically-inferred path.
+    let custom = root.join("custom-worktree");
+
+    let mut cmd = wt();
+    cmd.current_dir(&root)
+        .arg("add")
+        .arg("feature/login")
+        .arg("--path")
+        .arg(&custom)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("feature/login"));
+
+    // The custom path must now exist and contain the checked-out branch.
+    assert!(custom.is_dir(), "custom path was not created");
+    let branch = Command::new("git")
+        .args(["branch", "--show-current"])
+        .current_dir(&custom)
+        .output()
+        .expect("git branch --show-current");
+    assert!(branch.status.success());
+    let branch = String::from_utf8(branch.stdout).expect("utf8");
+    assert_eq!(branch.trim(), "feature/login");
+
+    cleanup_worktree(&root, "feature/login");
+    let _ = dir;
+}
+
+#[test]
 fn prune_json_output_is_array() {
     let (_dir, mut cmd) = repo();
     cmd.arg("prune")

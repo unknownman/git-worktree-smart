@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(
@@ -51,7 +52,8 @@ pub enum Commands {
     #[command(after_help = "EXAMPLES:\n\
             wt add feature/auth                     # new worktree on branch 'feature/auth'\n\
             wt add feature/auth main                # branch from 'main'\n\
-            wt add hotfix --track origin/hotfix     # track an existing remote branch")]
+            wt add hotfix --track origin/hotfix     # track an existing remote branch\n\
+            wt add feature/auth --path ../custom    # worktree at a custom path")]
     Add {
         /// The name of the new branch and worktree.
         name: String,
@@ -67,6 +69,12 @@ pub enum Commands {
         /// The branch must already exist on the remote.
         #[arg(long, conflicts_with = "base")]
         track: Option<String>,
+
+        /// Create the worktree at this custom path instead of the inferred
+        /// sibling path. Relative paths are resolved against the current
+        /// working directory.
+        #[arg(short, long)]
+        path: Option<PathBuf>,
     },
 
     /// Resolve a target worktree and print the path to switch to.

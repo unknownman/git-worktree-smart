@@ -37,9 +37,18 @@ fn main() -> ExitCode {
 fn dispatch(cli: &Cli, ctx: &Context) -> Result<(), AppError> {
     match &cli.command {
         Some(Commands::List) | None => cmd::list::run(ctx),
-        Some(Commands::Add { name, base, track }) => {
-            cmd::add::run(ctx, name, base.as_deref(), track.as_deref())
-        }
+        Some(Commands::Add {
+            name,
+            base,
+            track,
+            path,
+        }) => cmd::add::run(
+            ctx,
+            name,
+            base.as_deref(),
+            track.as_deref(),
+            path.as_deref(),
+        ),
         Some(Commands::Switch { target }) => cmd::switch::run(ctx, &target.join(" ")),
         Some(Commands::Remove { target, force }) => {
             cmd::remove::run(ctx, &target.join(" "), *force)
