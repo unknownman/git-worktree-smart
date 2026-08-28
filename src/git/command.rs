@@ -111,50 +111,75 @@ pub fn run_git_status(
     })
 }
 
-pub fn get_repo_root(verbose: bool) -> Result<PathBuf, AppError> {
-    // First find the top-level directory of the current worktree. `--show-toplevel`
-    // always returns an absolute path, so it is a stable anchor for resolving the
-    // (possibly relative) common dir below.
-    let toplevel = run_git(&["rev-parse", "--show-toplevel"], None, verbose)?;
-    let toplevel = PathBuf::from(toplevel);
+/// Return the canonicalized root of the repository's **main** worktree.
+///
+/// `git worktree list --porcelain` always lists the main worktree first, so we
+/// parse its path from the first `worktree <path>` entry — this avoids deriving
+/// the root from `--git-common-dir`, which breaks for submodules and
+/// `core.worktree` setups (the common dir lives inside the parent repository's
+/// `.git/modules`).
+///
+/// However, Git reports a submodule's main worktree as its **gitdir** rather
+/// than the checked-out directory (because the worktree's `.git` is a file
+/// pointing elsewhere, so Git cannot strip `.git` from the path). Detect that
+/// case — when the reported path is the git common directory itself — and fall
+/// back to the real worktree root from `--show-toplevel`.
+pub fn get_main_worktree_root(verbose: bool) -> Result<PathBuf, AppError> {
+    let output = run_git(&["worktree", "list", "--porcelain"], None, verbose)?;
 
-    // `--git-common-dir` always points at the main repository's `.git`, even
-    // when invoked from inside a linked worktree. We use it to derive the true
-    // main repo root instead of `--show-toplevel`, which would return the
-    // current worktree's root and cause incorrect sibling path inference.
-    //
-    // Run from the worktree's toplevel so any relative result (`.git` or
-    // `../.git`) resolves against that directory, NOT the process cwd — which
-    // may be a nested subdirectory where `cwd.join(".git")` does not exist.
-    let output = run_git(&["rev-parse", "--git-common-dir"], Some(&toplevel), verbose)?;
-
-    let mut git_dir = PathBuf::from(output);
-
-    // The common dir may be reported relative (e.g. `.git` from the main root);
-    // resolve it relative to the worktree toplevel before canonicalizing.
-    if !git_dir.is_absolute() {
-        git_dir = toplevel.join(git_dir);
-    }
-
-    let git_dir = std::fs::canonicalize(&git_dir).map_err(AppError::Io)?;
-
-    // When invoked from the main worktree, `git_dir` is the main `.git`
-    // directory, whose parent is the main repository root. When invoked from a
-    // linked worktree, `git_dir` points at the main `.git` (the common dir),
-    // whose parent is again the main repository root.
-    let root = git_dir
-        .parent()
-        .map(Path::to_path_buf)
+    let reported = output
+        .lines()
+        .find_map(|line| line.strip_prefix("worktree ").map(PathBuf::from))
         .ok_or_else(|| AppError::GitError {
-            message: format!(
-                "cannot determine repository root from `{}`",
-                git_dir.display()
-            ),
+            message: "cannot determine the main worktree root".to_owned(),
         })?;
 
-    // Canonicalize the derived root so it matches the canonicalized forms used
-    // elsewhere (e.g. `resolve_from_worktrees` and `wt remove`).
-    std::fs::canonicalize(&root).map_err(AppError::Io)
+    let common_dir = get_git_common_dir(verbose)?;
+
+    // If the reported main-worktree path is actually the git common directory
+    // (a submodule's gitdir), it is not a real worktree — fall back to the true
+    // worktree root reported by `--show-toplevel`.
+    if path_is_within(&reported, &common_dir) {
+        return get_current_worktree_root(verbose);
+    }
+
+    std::fs::canonicalize(&reported).map_err(AppError::Io)
+}
+
+/// Return the canonicalized root of the *current* worktree (`--show-toplevel`).
+fn get_current_worktree_root(verbose: bool) -> Result<PathBuf, AppError> {
+    let toplevel = run_git(&["rev-parse", "--show-toplevel"], None, verbose)?;
+    std::fs::canonicalize(&toplevel).map_err(AppError::Io)
+}
+
+/// Returns `true` if `path` equals or is a descendant of `ancestor`.
+fn path_is_within(path: &Path, ancestor: &Path) -> bool {
+    // Both arguments are absolute and already canonicalized by callers, so a
+    // plain component-wise prefix comparison is sufficient.
+    let path = path.to_string_lossy();
+    let ancestor = ancestor.to_string_lossy();
+    if ancestor.is_empty() {
+        return false;
+    }
+    path == ancestor || path.starts_with(&format!("{ancestor}/"))
+}
+
+/// Return the canonicalized path of the repository's Git **common directory**.
+///
+/// This is where worktree admin directories live (`<common>/worktrees/<name>`),
+/// regardless of whether the repo is a submodule or uses `core.worktree`. The
+/// result may be reported relative by Git, so it is resolved against the current
+/// working directory before canonicalizing.
+pub fn get_git_common_dir(verbose: bool) -> Result<PathBuf, AppError> {
+    let output = run_git(&["rev-parse", "--git-common-dir"], None, verbose)?;
+    let mut path = PathBuf::from(output);
+
+    if !path.is_absolute() {
+        let cwd = std::env::current_dir().map_err(AppError::Io)?;
+        path = cwd.join(path);
+    }
+
+    std::fs::canonicalize(&path).map_err(AppError::Io)
 }
 
 pub fn check_branch_exists(branch_name: &str, verbose: bool) -> Result<bool, AppError> {
@@ -230,4 +255,50 @@ pub fn is_commit_merged_or_reachable(
         verbose,
     )?;
     Ok(!output.is_empty())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::path_is_within;
+    use std::path::Path;
+
+    #[test]
+    fn path_equal_to_ancestor_is_within() {
+        assert!(path_is_within(
+            Path::new("/repo/super/.git/modules/sub"),
+            Path::new("/repo/super/.git/modules/sub"),
+        ));
+    }
+
+    #[test]
+    fn path_descendant_of_ancestor_is_within() {
+        assert!(path_is_within(
+            Path::new("/repo/super/.git/modules/sub/worktrees/x"),
+            Path::new("/repo/super/.git/modules/sub"),
+        ));
+    }
+
+    #[test]
+    fn ancestor_is_descendant_of_path_is_not_within() {
+        assert!(!path_is_within(
+            Path::new("/repo/super"),
+            Path::new("/repo/super/.git"),
+        ));
+    }
+
+    #[test]
+    fn sibling_path_is_not_within() {
+        assert!(!path_is_within(
+            Path::new("/repo/super/sub"),
+            Path::new("/repo/super/.git/modules"),
+        ));
+    }
+
+    #[test]
+    fn similar_prefix_but_not_within() {
+        assert!(!path_is_within(
+            Path::new("/repo/super/.git/modules/submarine"),
+            Path::new("/repo/super/.git/modules/sub"),
+        ));
+    }
 }

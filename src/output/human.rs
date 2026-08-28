@@ -160,7 +160,7 @@ pub fn print_switch_success(info: &WorktreeInfo) {
         local target_path
         target_path="$(command wt path "$@")"
         if [ $? -eq 0 ] && [ -n "$target_path" ]; then
-            cd "$target_path"
+            cd -- "$target_path"
         fi
     else
         command wt "$@"

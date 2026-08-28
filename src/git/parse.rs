@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::error::AppError;
-use crate::git::command::{get_repo_root, run_git, run_git_status, run_git_stderr};
+use crate::git::command::{get_git_common_dir, run_git, run_git_status, run_git_stderr};
 use crate::models::{WorktreeInfo, WorktreeStatus};
 
 pub fn get_worktrees(verbose: bool) -> Result<Vec<WorktreeInfo>, AppError> {
@@ -375,27 +375,32 @@ fn strip_quotes(s: &str) -> &str {
 /// Handles both absolute paths (returned as-is) and relative admin-dir entries
 /// of the form `worktrees/<name>`, resolved by reading the `gitdir` file that
 /// points back to the (now missing) worktree.
-pub fn resolve_stale_path(path: &str, repo_root: &Path) -> Result<PathBuf, AppError> {
+///
+/// `common_dir` is the repository's **git common directory** (see
+/// [`crate::git::command::get_git_common_dir`]); admin directories for linked
+/// worktrees always live at `<common_dir>/worktrees/<name>`, even for
+/// submodules (where `.git` is a file, not a directory).
+pub fn resolve_stale_path(path: &str, common_dir: &Path) -> Result<PathBuf, AppError> {
     let p = Path::new(path);
 
     if p.is_absolute() {
         return Ok(p.to_path_buf());
     }
 
-    // Relative form: worktrees/<name>. The admin dir is <repo>/.git/worktrees/<name>.
-    // Its `gitdir` file holds the path to the linked worktree's `.git` file;
-    // the parent of that is the worktree root.
-    let admin_dir = repo_root.join(".git").join(p);
+    // Relative form: worktrees/<name>. The admin dir lives at
+    // <common_dir>/worktrees/<name>. Its `gitdir` file holds the path to the
+    // linked worktree's `.git` file; the parent of that is the worktree root.
+    let admin_dir = common_dir.join(p);
     let gitdir_file = admin_dir.join("gitdir");
 
     // If the `gitdir` file cannot be read, gracefully fall back to the admin
-    // dir itself (or the repo-root-joined path) rather than failing the whole
+    // dir itself (or the common-dir-joined path) rather than failing the whole
     // `prune` command. The fallback path is only used for display purposes.
     let Ok(contents) = std::fs::read_to_string(&gitdir_file) else {
         let fallback = if admin_dir.exists() {
             admin_dir
         } else {
-            repo_root.join(path)
+            common_dir.join(path)
         };
         return Ok(fallback);
     };
@@ -425,11 +430,11 @@ pub fn get_stale_worktrees(verbose: bool) -> Result<Vec<String>, AppError> {
     )?;
     let raw = parse_prune_dry_run(&output);
 
-    let repo_root = get_repo_root(verbose)?;
+    let common_dir = get_git_common_dir(verbose)?;
 
     raw.iter()
         .map(|entry| {
-            resolve_stale_path(entry, &repo_root).map(|p| p.to_string_lossy().into_owned())
+            resolve_stale_path(entry, &common_dir).map(|p| p.to_string_lossy().into_owned())
         })
         .collect()
 }
@@ -910,32 +915,32 @@ Removing worktrees/rel: missing gitdir\n";
 
     #[test]
     fn test_resolve_stale_absolute_path() {
-        let path = resolve_stale_path("/abs/stale-dir", Path::new("/repo")).unwrap();
+        let path = resolve_stale_path("/abs/stale-dir", Path::new("/common")).unwrap();
         assert_eq!(path, PathBuf::from("/abs/stale-dir"));
     }
 
     #[test]
     fn test_resolve_stale_relative_path_reads_gitdir() {
-        // Set up a fake admin dir with a gitdir file pointing to a fake .git.
-        let repo = "/tmp/resolve-test-repo";
-        std::fs::create_dir_all(format!("{repo}/.git/worktrees/feature-x")).unwrap();
+        // Set up a fake common dir with a gitdir file pointing to a fake .git.
+        let common = "/tmp/resolve-test-common";
+        std::fs::create_dir_all(format!("{common}/worktrees/feature-x")).unwrap();
         std::fs::write(
-            format!("{repo}/.git/worktrees/feature-x/gitdir"),
+            format!("{common}/worktrees/feature-x/gitdir"),
             "/tmp/resolve-test-repo-feature-x/.git",
         )
         .unwrap();
 
-        let path = resolve_stale_path("worktrees/feature-x", Path::new(repo)).unwrap();
+        let path = resolve_stale_path("worktrees/feature-x", Path::new(common)).unwrap();
         assert_eq!(path, PathBuf::from("/tmp/resolve-test-repo-feature-x"));
 
-        std::fs::remove_dir_all("/tmp/resolve-test-repo").unwrap();
+        std::fs::remove_dir_all(common).unwrap();
     }
 
     #[test]
     fn test_resolve_stale_relative_missing_gitdir_falls_back() {
         // A missing gitdir file should not error; it falls back to a displayable
         // path so `prune` can still print the entry and succeed.
-        let result = resolve_stale_path("worktrees/missing", Path::new("/no/such/repo")).unwrap();
-        assert_eq!(result, PathBuf::from("/no/such/repo/worktrees/missing"));
+        let result = resolve_stale_path("worktrees/missing", Path::new("/no/such/common")).unwrap();
+        assert_eq!(result, PathBuf::from("/no/such/common/worktrees/missing"));
     }
 }

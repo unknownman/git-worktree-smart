@@ -2,7 +2,9 @@ use std::path::Path;
 
 use crate::error::AppError;
 use crate::git;
-use crate::git::command::{check_branch_exists, check_remote_branch_exists, get_repo_root};
+use crate::git::command::{
+    check_branch_exists, check_remote_branch_exists, get_main_worktree_root,
+};
 use crate::git::ops;
 use crate::git::parse::infer_worktree_path;
 use crate::output;
@@ -15,7 +17,22 @@ pub fn run(
     track: Option<&str>,
     path: Option<&Path>,
 ) -> Result<(), AppError> {
-    let repo_root = get_repo_root(ctx.verbose)?;
+    let main_root = get_main_worktree_root(ctx.verbose)?;
+
+    // Linked worktrees cannot be added to a bare repository. Detect it up front
+    // (mirroring the implicit check that `--show-toplevel` used to perform) so
+    // we surface a clean, actionable error instead of a raw git fatal.
+    let bare = crate::git::command::run_git_status(
+        &["rev-parse", "--is-bare-repository"],
+        None,
+        ctx.verbose,
+    )?
+    .stdout
+    .trim()
+    .eq_ignore_ascii_case("true");
+    if bare {
+        return Err(AppError::BareRepositoryNotSupported);
+    }
 
     // An empty repository (no commits) cannot back a linked worktree. Detect it
     // up front and return a clean, actionable error instead of a raw git fatal
@@ -44,7 +61,7 @@ pub fn run(
                 Err(_) => abs,
             }
         }
-        None => infer_worktree_path(&repo_root, name)?,
+        None => infer_worktree_path(&main_root, name)?,
     };
 
     if target_path.exists() {
