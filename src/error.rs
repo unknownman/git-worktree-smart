@@ -13,26 +13,28 @@ pub enum AppError {
     #[error("`wt` must be run inside a working tree, not a bare repository.")]
     BareRepositoryNotSupported,
 
-    #[error("Worktree at `{path}` has uncommitted changes. 💡 Pass --force to delete it anyway.")]
+    #[error("Worktree at `{}` has uncommitted changes. 💡 Pass --force to delete it anyway.", .path.display())]
     WorktreeIsDirty { path: PathBuf },
 
     #[error(
-        "Worktree at `{path}` has {ahead} unmerged or unpushed commit(s). 💡 Pass --force to delete it anyway."
+        "Worktree at `{}` has {ahead} unmerged or unpushed commit(s). 💡 Pass --force to delete it anyway.",
+        .path.display()
     )]
     UnpushedCommits { path: PathBuf, ahead: u32 },
 
-    #[error("Cannot remove the main worktree at `{path}` — it is the root of the repository.")]
+    #[error("Cannot remove the main worktree at `{}` — it is the root of the repository.", .path.display())]
     CannotRemoveMainWorktree { path: PathBuf },
 
-    #[error("Cannot remove the active worktree you are currently in (`{path}`). Switch to another worktree first: `cd $(wt path main)`")]
+    #[error("Cannot remove the active worktree you are currently in (`{}`). Switch to another worktree first: `cd $(wt path main)`", .path.display())]
     CannotRemoveActiveWorktree { path: PathBuf },
 
     #[error(
-        "Worktree directory at `{path}` is missing. Use `wt prune` to clean up stale references."
+        "Worktree directory at `{}` is missing. Use `wt prune` to clean up stale references.",
+        .path.display()
     )]
     StaleWorktree { path: PathBuf },
 
-    #[error("Worktree at `{path}` is in a detached HEAD state with commits not reachable from any branch. 💡 Pass --force to delete it anyway.")]
+    #[error("Worktree at `{}` is in a detached HEAD state with commits not reachable from any branch. 💡 Pass --force to delete it anyway.", .path.display())]
     DetachedHeadWithUnreachableCommits { path: PathBuf },
 
     #[error("Git failed: {message}")]
@@ -53,10 +55,10 @@ pub enum AppError {
     #[error("Branch `{branch}` already exists locally. Cannot specify `--base` or `--track` when checking out an existing branch.")]
     BranchAlreadyExistsCannotSpecifyBaseOrTrack { branch: String },
 
-    #[error("Branch `{branch}` is already checked out at `{path}`.")]
+    #[error("Branch `{branch}` is already checked out at `{}`.", .path.display())]
     BranchAlreadyCheckedOut { branch: String, path: PathBuf },
 
-    #[error("Cannot create worktree: a file or directory already exists at `{path}`. 💡 If this is a leftover from a deleted worktree, run `wt prune` to clean it up first.")]
+    #[error("Cannot create worktree: a file or directory already exists at `{}`. 💡 If this is a leftover from a deleted worktree, run `wt prune` to clean it up first.", .path.display())]
     PathAlreadyExists { path: PathBuf },
 
     #[error("Cannot create worktree in an empty repository. Please make an initial commit first.")]

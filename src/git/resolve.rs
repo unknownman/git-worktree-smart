@@ -85,6 +85,11 @@ pub fn resolve_from_worktrees(
     }
 
     // 3. Fuzzy match
+    // `SkimMatcherV2` treats spaces as literal characters, so a multi-word query
+    // like `wt switch feature auth` (joined into "feature auth") would fail to
+    // match `feature/auth`. Strip whitespace for fuzzy scoring only; exact and
+    // substring matching above handle spaces correctly for real directory names.
+    let fuzzy_query = query.replace(' ', "");
     let matcher = SkimMatcherV2::default();
 
     // Scores below this floor are too weak to trust as a match (e.g. a single
@@ -95,11 +100,11 @@ pub fn resolve_from_worktrees(
     let mut scored: Vec<(i64, &WorktreeInfo)> = worktrees
         .iter()
         .filter_map(|wt| {
-            let name_score = matcher.fuzzy_match(&wt.name, query);
+            let name_score = matcher.fuzzy_match(&wt.name, &fuzzy_query);
             let branch_score = wt
                 .branch
                 .as_ref()
-                .and_then(|b| matcher.fuzzy_match(b, query));
+                .and_then(|b| matcher.fuzzy_match(b, &fuzzy_query));
             let best = match (name_score, branch_score) {
                 (Some(n), Some(b)) => Some(n.max(b)),
                 (Some(n), None) => Some(n),
@@ -209,6 +214,19 @@ mod tests {
             AppError::MultipleWorktreesMatch { query } => assert_eq!(query, "f/l"),
             other => panic!("expected MultipleWorktreesMatch, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_fuzzy_match_ignores_spaces_in_query() {
+        // The CLI can join a multi-word target into "feature auth". Because
+        // `SkimMatcherV2` treats spaces literally, the fuzzy query must have its
+        // whitespace stripped so "f auth" still matches "feature/auth".
+        let worktrees = vec![
+            worktree("main", Some("main")),
+            worktree("feature/auth", Some("feature/auth")),
+        ];
+        let result = resolve_from_worktrees(&worktrees, "f auth").unwrap();
+        assert_eq!(result.name, "feature/auth");
     }
 
     #[test]

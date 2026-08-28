@@ -9,44 +9,51 @@ pub fn get_worktrees(verbose: bool) -> Result<Vec<WorktreeInfo>, AppError> {
     let output = run_git(&["worktree", "list", "--porcelain"], None, verbose)?;
     let mut worktrees = parse_worktree_list(&output);
 
-    // Fetch the head message and status for every worktree concurrently. Each
-    // spawns several git subprocesses, so parallelizing avoids a long serial
-    // stall. Failures for an individual worktree (corrupted index, permission
-    // errors, missing dir) are caught and surfaced as stale/unreadable rather
-    // than crashing the whole `wt list` — healthy worktrees still display.
-    std::thread::scope(|scope| {
-        let handles: Vec<_> = worktrees
-            .iter_mut()
-            .map(|wt| {
-                scope.spawn(move || {
-                    let head_ok = get_head_message(&wt.head_hash, &wt.path, verbose);
-                    let status_ok = get_worktree_status(&wt.path, verbose);
+    // Fetch the head message and status for every worktree. Each spawns several
+    // git subprocesses, so a little parallelism avoids a long serial stall. To
+    // prevent resource exhaustion in enormous repositories (e.g. 150+ git
+    // processes running at once), process worktrees in bounded chunks:
+    // threads run concurrently only within a chunk, then the next chunk starts.
+    // Failures for an individual worktree (corrupted index, permission errors,
+    // missing dir) are caught and surfaced as stale/unreadable rather than
+    // crashing the whole `wt list` — healthy worktrees still display.
+    const CHUNK_SIZE: usize = 8;
 
-                    match (head_ok, status_ok) {
-                        (Ok(msg), Ok(status)) => {
-                            wt.head_msg = msg;
-                            wt.status = status;
+    for chunk in worktrees.chunks_mut(CHUNK_SIZE) {
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = chunk
+                .iter_mut()
+                .map(|wt| {
+                    scope.spawn(move || {
+                        let head_ok = get_head_message(&wt.head_hash, &wt.path, verbose);
+                        let status_ok = get_worktree_status(&wt.path, verbose);
+
+                        match (head_ok, status_ok) {
+                            (Ok(msg), Ok(status)) => {
+                                wt.head_msg = msg;
+                                wt.status = status;
+                            }
+                            (_, Ok(status)) => {
+                                // Head message unreadable but status was read.
+                                wt.head_msg = "(unreadable)".to_owned();
+                                wt.status = status;
+                            }
+                            (_, _) => {
+                                // Mark as unreadable so the UI can flag it instead
+                                // of silently reporting a "clean" worktree.
+                                wt.head_msg = "(unreadable)".to_owned();
+                                wt.status.is_stale = true;
+                            }
                         }
-                        (_, Ok(status)) => {
-                            // Head message unreadable but status was read.
-                            wt.head_msg = "(unreadable)".to_owned();
-                            wt.status = status;
-                        }
-                        (_, _) => {
-                            // Mark as unreadable so the UI can flag it instead
-                            // of silently reporting a "clean" worktree.
-                            wt.head_msg = "(unreadable)".to_owned();
-                            wt.status.is_stale = true;
-                        }
-                    }
+                    })
                 })
-            })
-            .collect();
+                .collect();
 
-        for handle in handles {
-            let _ = handle.join();
-        }
-    });
+            for handle in handles {
+                let _ = handle.join();
+            }
+        });
+    }
 
     Ok(worktrees)
 }
@@ -255,8 +262,10 @@ fn get_ahead_behind(cwd: &Path, verbose: bool) -> Result<(u32, u32), AppError> {
         "refs/remotes/origin/HEAD",
         "refs/heads/main",
         "refs/heads/master",
+        "refs/heads/develop",
         "refs/remotes/origin/main",
         "refs/remotes/origin/master",
+        "refs/remotes/origin/develop",
     ];
 
     for base in candidates {
