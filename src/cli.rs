@@ -93,7 +93,11 @@ pub enum Commands {
                 for arg in \"$@\"; do\n\
                     if [ \"$arg\" = \"--json\" ]; then has_json=true; fi\n\
                 done\n\n\
-                if { [ \"$1\" = \"switch\" ] || [ \"$1\" = \"cd\" ]; } && [ \"$has_json\" = false ]; then\n\
+                local is_switch=false\n\
+                if [ \"$1\" = \"switch\" ] || [ \"$1\" = \"cd\" ]; then\n\
+                    is_switch=true\n\
+                fi\n\n\
+                if [ \"$is_switch\" = true ] && [ \"$has_json\" = false ]; then\n\
                     shift\n\
                     local target_path\n\
                     target_path=\"$(command wt path \"$@\")\"\n\

@@ -98,7 +98,18 @@ pub fn resolve_from_worktrees(
         }
     }
 
-    // 4. Fuzzy match
+    // 4. If the query is an absolute path and failed to resolve in the exact or
+    // path-like stages above, do NOT fall through to fuzzy matching. Fuzzy
+    // matching an absolute path against branch names is a safety hazard: e.g.
+    // `wt rm /tmp/typo/path` could match a branch with similar characters and
+    // delete the wrong worktree.
+    if std::path::Path::new(query).is_absolute() {
+        return Err(AppError::WorktreeNotFound {
+            query: query.to_owned(),
+        });
+    }
+
+    // 5. Fuzzy match
     // `SkimMatcherV2` treats spaces as literal characters, so a multi-word query
     // like `wt switch feature auth` (joined into "feature auth") would fail to
     // match `feature/auth`. Strip whitespace for fuzzy scoring only; exact and
@@ -285,6 +296,18 @@ mod tests {
             AppError::WorktreeNotFound { query } => assert_eq!(query, "zzz"),
             other => panic!("expected WorktreeNotFound, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_absolute_path_never_falls_through_to_fuzzy_match() {
+        // A missing absolute path must be rejected as WorktreeNotFound rather
+        // than accidentally resolving to a branch via fuzzy matching. Otherwise
+        // `wt rm /tmp/typo/path` could delete the wrong worktree.
+        let result = resolve_from_worktrees(&mock_worktrees(), "/absolute/path/to/nowhere");
+        assert!(
+            matches!(result, Err(AppError::WorktreeNotFound { .. })),
+            "expected WorktreeNotFound, got {result:?}"
+        );
     }
 
     #[test]
