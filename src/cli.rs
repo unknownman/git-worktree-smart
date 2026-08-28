@@ -84,11 +84,26 @@ pub enum Commands {
     /// the path command instead: `cd $(wt path feature/auth)`.
     #[command(
         alias = "cd",
-        after_help = "EXAMPLES:\n\
+        after_help = "SHELL INTEGRATION:\n\
+            A child process cannot change the parent shell's directory, so pair\n\
+            switch with the path command: `cd $(wt path feature/auth)`.\n\
+            For instant switching, add this wrapper to ~/.zshrc or ~/.bashrc:\n\n\
+            wt() {\n\
+                if [ \"$1\" = \"switch\" ] || [ \"$1\" = \"cd\" ]; then\n\
+                    shift\n\
+                    local target_path\n\
+                    target_path=\"$(command wt path \"$@\")\"\n\
+                    if [ $? -eq 0 ] && [ -n \"$target_path\" ]; then\n\
+                        cd -- \"$target_path\"\n\
+                    fi\n\
+                else\n\
+                    command wt \"$@\"\n\
+                fi\n\
+            }\n\n\
+            EXAMPLES:\n\
             wt switch login           # fuzzy-match 'feature/login'\n\
             wt switch feature/login   # exact branch match\n\
-            wt cd main                # alias for 'switch'\n\
-            cd $(wt path login)       # actually switch your shell's directory"
+            wt cd main                # alias for 'switch'"
     )]
     Switch {
         /// Branch name, path, or substring to match against.

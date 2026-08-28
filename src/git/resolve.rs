@@ -25,32 +25,6 @@ pub fn resolve_from_worktrees(
         });
     }
 
-    // 0. Path resolution: if the query can be canonicalized to an absolute
-    // path (e.g. `.`, `..`, or a relative dir), find the worktree that
-    // encloses it. When run from a subdirectory, the query canonicalizes to a
-    // nested path, so we match with `starts_with` and select the longest
-    // matching worktree (if multiple nest) to pick the most specific one.
-    if let Ok(query_canon) = dunce::canonicalize(query) {
-        let mut best: Option<(usize, &WorktreeInfo)> = None;
-        for wt in worktrees {
-            if let Ok(wt_canon) = dunce::canonicalize(&wt.path) {
-                if query_canon.starts_with(&wt_canon) {
-                    // Prefer the worktree whose root is deepest along the path.
-                    if let Some((best_len, _)) = best {
-                        if wt_canon.as_os_str().len() > best_len {
-                            best = Some((wt_canon.as_os_str().len(), wt));
-                        }
-                    } else {
-                        best = Some((wt_canon.as_os_str().len(), wt));
-                    }
-                }
-            }
-        }
-        if let Some((_, wt)) = best {
-            return Ok(wt.clone());
-        }
-    }
-
     // 1. Exact match
     for wt in worktrees {
         if wt.name == query
@@ -84,7 +58,38 @@ pub fn resolve_from_worktrees(
         });
     }
 
-    // 3. Fuzzy match
+    // 3. Path resolution: if the query can be canonicalized to an absolute path
+    // (e.g. `.`, `..`, or a relative dir), find the worktree that encloses it.
+    // When run from a subdirectory, the query canonicalizes to a nested path, so
+    // we match with `starts_with` and select the longest matching worktree (if
+    // multiple nest) to pick the most specific one.
+    //
+    // This runs AFTER exact and substring matching on purpose: a query like
+    // `main` must match a branch/worktree named `main` first, even if a local
+    // folder also named `main` happens to exist in the current worktree —
+    // otherwise a local directory would shadow a same-named branch worktree.
+    if let Ok(query_canon) = dunce::canonicalize(query) {
+        let mut best: Option<(usize, &WorktreeInfo)> = None;
+        for wt in worktrees {
+            if let Ok(wt_canon) = dunce::canonicalize(&wt.path) {
+                if query_canon.starts_with(&wt_canon) {
+                    // Prefer the worktree whose root is deepest along the path.
+                    if let Some((best_len, _)) = best {
+                        if wt_canon.as_os_str().len() > best_len {
+                            best = Some((wt_canon.as_os_str().len(), wt));
+                        }
+                    } else {
+                        best = Some((wt_canon.as_os_str().len(), wt));
+                    }
+                }
+            }
+        }
+        if let Some((_, wt)) = best {
+            return Ok(wt.clone());
+        }
+    }
+
+    // 4. Fuzzy match
     // `SkimMatcherV2` treats spaces as literal characters, so a multi-word query
     // like `wt switch feature auth` (joined into "feature auth") would fail to
     // match `feature/auth`. Strip whitespace for fuzzy scoring only; exact and
@@ -329,5 +334,63 @@ mod tests {
 
         let result = resolve_from_worktrees(&worktrees, inner_dir.to_string_lossy().as_ref());
         assert_eq!(result.unwrap().name, "inner");
+    }
+
+    /// Run the closure with the process's current directory temporarily set to
+    /// `dir`, restoring the original directory afterwards even on panic. The
+    /// path-resolution step canonicalizes the query relative to cwd, so this is
+    /// required to reproduce "a local folder whose name equals a branch".
+    ///
+    /// Safety note: this briefly mutates the global cwd, but only this test
+    /// relies on it (all other unit tests use absolute tempdir paths), and the
+    /// integration tests run in a separate process, so this does not introduce
+    /// cross-test interference.
+    fn with_cwd<F: FnOnce()>(dir: &std::path::Path, f: F) {
+        let original = std::env::current_dir().expect("read current dir");
+        std::env::set_current_dir(dir).expect("change to temp cwd");
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+        std::env::set_current_dir(&original).expect("restore current dir");
+        if let Err(payload) = result {
+            std::panic::resume_unwind(payload);
+        }
+    }
+
+    #[test]
+    fn test_exact_branch_match_beats_local_directory_path() {
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let cur_wt = dir.path().join("repo");
+        let local = cur_wt.join("main");
+        std::fs::create_dir_all(&local).expect("create local dir named like a branch");
+
+        let main_wt = dir.path().join("main-wt");
+        std::fs::create_dir_all(&main_wt).expect("create main worktree");
+
+        let worktrees = vec![
+            WorktreeInfo {
+                path: cur_wt.clone(),
+                name: "repo".to_owned(),
+                branch: Some("repo".to_owned()),
+                head_hash: "abc1234".to_owned(),
+                head_msg: "msg".to_owned(),
+                status: WorktreeStatus::clean(),
+            },
+            WorktreeInfo {
+                path: main_wt.clone(),
+                name: "main".to_owned(),
+                branch: Some("main".to_owned()),
+                head_hash: "abcd123".to_owned(),
+                head_msg: "msg".to_owned(),
+                status: WorktreeStatus::clean(),
+            },
+        ];
+
+        // From inside the `repo` worktree there is a local folder named `main`.
+        // Regardless, querying `main` must resolve to the worktree whose branch
+        // is `main`, not to the enclosing worktree of the local directory —
+        // exact/substring matching take precedence over path resolution.
+        with_cwd(&cur_wt, || {
+            let result = resolve_from_worktrees(&worktrees, "main").unwrap();
+            assert_eq!(result.name, "main");
+        });
     }
 }

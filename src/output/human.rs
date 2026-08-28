@@ -158,27 +158,6 @@ pub fn print_switch_success(info: &WorktreeInfo) {
         "To switch instantly, use:".dimmed(),
         "cd $(wt path <query>)".yellow().bold(),
     );
-    println!();
-    println!(
-        "{}",
-        "Pro-tip: Add this to your ~/.zshrc or ~/.bashrc:".dimmed()
-    );
-    println!(
-        "  {}",
-        r#"wt() {
-    if [ "$1" = "switch" ] || [ "$1" = "cd" ]; then
-        shift
-        local target_path
-        target_path="$(command wt path "$@")"
-        if [ $? -eq 0 ] && [ -n "$target_path" ]; then
-            cd -- "$target_path"
-        fi
-    else
-        command wt "$@"
-    fi
-}"#
-        .dimmed()
-    );
 }
 
 pub fn print_remove_success(info: &WorktreeInfo, forced: bool) {
