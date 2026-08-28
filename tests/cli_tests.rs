@@ -614,3 +614,182 @@ fn test_add_existing_branch_with_base_or_track_is_rejected() {
 
     let _ = dir;
 }
+
+#[test]
+fn test_remove_branch_with_upstream_ahead_fails_without_force() {
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let root = dir.path().to_path_buf();
+    init_repo_with_commit(&root);
+
+    // Set up a mock remote (bare repo) and establish an upstream for main.
+    let bare = dir.path().join("remote.git");
+    let init = Command::new("git")
+        .args(["init", "--bare", "-q"])
+        .arg(&bare)
+        .status()
+        .expect("git init --bare");
+    assert!(init.success());
+
+    let add_remote = Command::new("git")
+        .args(["remote", "add", "origin"])
+        .arg(&bare)
+        .current_dir(&root)
+        .status()
+        .expect("git remote add origin");
+    assert!(add_remote.success());
+
+    let push_main = Command::new("git")
+        .args(["push", "-q", "-u", "origin", "main"])
+        .current_dir(&root)
+        .status()
+        .expect("git push origin main");
+    assert!(push_main.success());
+
+    // Create a linked worktree on a new branch.
+    let mut add = wt();
+    add.current_dir(&root)
+        .arg("add")
+        .arg("feature/ahead")
+        .assert()
+        .success();
+
+    // Locate the linked worktree's path.
+    let mut path = wt();
+    let linked_out = path
+        .current_dir(&root)
+        .arg("path")
+        .arg("feature/ahead")
+        .output()
+        .expect("wt path");
+    let linked =
+        std::path::PathBuf::from(String::from_utf8(linked_out.stdout).expect("utf8").trim());
+
+    // Push the branch to establish an upstream (origin/feature/ahead).
+    let push_branch = Command::new("git")
+        .args(["push", "-q", "-u", "origin", "feature/ahead"])
+        .current_dir(&linked)
+        .status()
+        .expect("git push feature/ahead");
+    assert!(push_branch.success());
+
+    // Commit locally so the branch is now 1 commit ahead of its upstream.
+    let commit = Command::new("git")
+        .args(["commit", "--allow-empty", "-m", "ahead of upstream"])
+        .current_dir(&linked)
+        .status()
+        .expect("git commit in linked worktree");
+    assert!(commit.success());
+
+    // Without --force: must refuse removal of an unpushed commit.
+    let mut cmd = wt();
+    cmd.current_dir(&root)
+        .arg("remove")
+        .arg("feature/ahead")
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("unpushed commit"));
+
+    // With --force: removal must succeed.
+    let mut cmd = wt();
+    cmd.current_dir(&root)
+        .arg("remove")
+        .arg("--force")
+        .arg("feature/ahead")
+        .assert()
+        .success();
+
+    cleanup_worktree(&root, "feature/ahead");
+    let _ = dir;
+}
+
+#[test]
+fn test_prune_execution_with_yes_flag() {
+    let (_dir, root, linked) = repo_with_worktree();
+
+    // Deleting the worktree directory makes the reference stale.
+    std::fs::remove_dir_all(&linked).expect("remove worktree dir");
+
+    let mut cmd = wt();
+    cmd.current_dir(&root)
+        .arg("prune")
+        .arg("--yes")
+        .assert()
+        .success()
+        // ANSI color codes wrap the message segments, so assert on the
+        // contiguous, uncolored portion that confirms a single stale worktree
+        // was pruned.
+        .stdout(predicate::str::contains("stale worktree(s)"));
+
+    // The directory is gone and its git reference was pruned; nothing left to
+    // clean up outside the tempdir.
+    let _ = root;
+}
+
+#[test]
+fn test_fuzzy_match_threshold_rejects_unrelated_query() {
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let root = dir.path().to_path_buf();
+    init_repo_with_commit(&root);
+
+    let mut add = wt();
+    add.current_dir(&root)
+        .arg("add")
+        .arg("feature/login")
+        .assert()
+        .success();
+
+    // "zzz" shares no meaningful part with any worktree name/branch; it must be
+    // rejected as not found rather than falsely matching on weak characters.
+    let mut cmd = wt();
+    cmd.current_dir(&root)
+        .arg("path")
+        .arg("zzz")
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("No worktree found"));
+
+    cleanup_worktree(&root, "feature/login");
+    let _ = dir;
+}
+
+#[test]
+fn test_add_with_relative_path_canonicalizes_cleanly() {
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let root = dir.path().to_path_buf();
+    init_repo_with_commit(&root);
+
+    // A relative path with `..` segments, resolved against the cwd. After the
+    // worktree is created, the reported path must be the clean canonicalized
+    // absolute path (i.e. ./custom/.. is normalized away).
+    let mut cmd = wt();
+    cmd.current_dir(&root)
+        .arg("add")
+        .arg("feature/rel")
+        .arg("--path")
+        .arg("./custom/../nested/worktree")
+        .assert()
+        .success();
+
+    let nested = root.join("nested/worktree");
+    assert!(nested.is_dir(), "worktree not created at nested path");
+
+    // `wt add` (and `wt list`) should report the canonicalized absolute path.
+    let expected = std::fs::canonicalize(&nested).expect("canonicalize nested path");
+
+    let mut list = wt();
+    let out = list
+        .current_dir(&root)
+        .arg("list")
+        .arg("--json")
+        .output()
+        .expect("wt list --json");
+    assert!(out.status.success(), "wt list --json failed");
+    let stdout = String::from_utf8(out.stdout).expect("utf8");
+    assert!(
+        stdout.contains(&expected.to_string_lossy().into_owned()),
+        "wt list --json did not report clean canonicalized path: {stdout}"
+    );
+
+    cleanup_worktree(&root, "feature/rel");
+    let _ = dir;
+}

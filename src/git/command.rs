@@ -79,7 +79,13 @@ pub fn run_git_status(
     verbose: bool,
 ) -> Result<CommandStatus, AppError> {
     if verbose {
-        eprintln!("[EXEC] git {}", args.join(" "));
+        // `get_worktrees` runs worker threads in parallel; each prints a
+        // `[EXEC]` line to stderr. Locking stderr keeps the write atomic so
+        // concurrent lines never interleave and garble the console output.
+        let stderr = std::io::stderr();
+        let mut handle = stderr.lock();
+        use std::io::Write;
+        let _ = writeln!(handle, "[EXEC] git {}", args.join(" "));
     }
 
     let mut cmd = Command::new("git");
